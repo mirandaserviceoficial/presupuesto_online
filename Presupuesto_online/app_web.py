@@ -287,6 +287,21 @@ with tab2:
 # ==========================================
 with tab3:
     st.subheader("Directorio de Clientes")
+    
+    # --- Formulario para Agregar Cliente ---
+    with st.expander("➕ Agregar Nuevo Cliente"):
+        with st.form("form_nuevo_cliente"):
+            nuevo_nom_cli = st.text_input("Nombre del Cliente")
+            nuevo_cor_cli = st.text_input("Correo Electrónico")
+            
+            if st.form_submit_button("Guardar Cliente", type="primary"):
+                if nuevo_nom_cli.strip():
+                    hoja_clientes.append_row([nuevo_nom_cli.strip(), nuevo_cor_cli.strip()])
+                    st.success(f"¡Cliente '{nuevo_nom_cli}' guardado! Recarga la página para verlo en la lista.")
+                else:
+                    st.warning("El nombre es obligatorio.")
+
+    # Mostrar tabla de clientes
     if clientes_db:
         df_clientes = pd.DataFrame(list(clientes_db.items()), columns=["Nombre", "Correo"])
         st.dataframe(df_clientes, use_container_width=True, hide_index=True)
@@ -295,6 +310,21 @@ with tab3:
         
     st.divider()
     st.subheader("Catálogo de Servicios")
+
+    # --- Formulario para Agregar Servicio ---
+    with st.expander("➕ Agregar Nuevo Servicio"):
+        with st.form("form_nuevo_servicio"):
+            nuevo_nom_ser = st.text_input("Descripción del Servicio")
+            nuevo_pre_ser = st.number_input("Precio ($)", min_value=0.0, step=1.0)
+            
+            if st.form_submit_button("Guardar Servicio", type="primary"):
+                if nuevo_nom_ser.strip():
+                    hoja_servicios.append_row([nuevo_nom_ser.strip(), nuevo_pre_ser])
+                    st.success(f"¡Servicio '{nuevo_nom_ser}' guardado! Recarga la página para verlo en la lista.")
+                else:
+                    st.warning("La descripción es obligatoria.")
+
+    # Mostrar tabla de servicios
     if servicios_db:
         df_servicios = pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio"])
         st.dataframe(df_servicios, use_container_width=True, hide_index=True)
