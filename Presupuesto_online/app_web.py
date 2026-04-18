@@ -22,7 +22,9 @@ except:
 
 DIRECCION_PAPA = "190 Shannon Blvd, Middletown, DE 19709"
 TELEFONO_PAPA = "(302) 584-2281"
-PLANTILLA_IMG = "plantilla_presupuesto.png"
+# Obligamos al servidor a buscar en la ruta absoluta correcta
+DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
+PLANTILLA_IMG = os.path.join(DIRECTORIO_ACTUAL, "plantilla_presupuesto.png")
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 @st.cache_resource
