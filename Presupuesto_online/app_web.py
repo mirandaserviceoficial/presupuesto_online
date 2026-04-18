@@ -7,15 +7,14 @@ import os
 import smtplib
 from email.message import EmailMessage
 import json
-import pandas as pd # Necesario para mostrar tablas bonitas en Streamlit
+import pandas as pd
 
-# --- CONFIGURACIÓN DE PÁGINA DE STREAMLIT ---
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Miranda Service", page_icon="🌿", layout="centered")
 
 # --- DATOS DE MIRANDA SERVICE ---
 CORREO_PAPA = "MirandaServiceOficial@gmail.com"
 
-# Intentar leer la contraseña de Gmail desde los Secretos de la Nube. Si falla, usa un texto por defecto.
 try:
     PASSWORD_APP_GMAIL = st.secrets["gmail_password"]
 except:
@@ -25,17 +24,14 @@ DIRECCION_PAPA = "190 Shannon Blvd, Middletown, DE 19709"
 TELEFONO_PAPA = "(302) 584-2281"
 PLANTILLA_IMG = "plantilla_presupuesto.png"
 
-# --- CONEXIÓN A GOOGLE SHEETS (CORREGIDA PARA LA NUBE) ---
+# --- CONEXIÓN A GOOGLE SHEETS ---
 @st.cache_resource
 def conectar_bd():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
-    # El programa detecta si está en la nube (Streamlit) leyendo los secretos
     if "google_creds_json" in st.secrets:
         creds_dict = json.loads(st.secrets["google_creds_json"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     else:
-        # Si lo pruebas en tu compu y no tienes secretos configurados, intenta leer el archivo local
         creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales.json", scope)
         
     client = gspread.authorize(creds)
@@ -51,17 +47,59 @@ except Exception as e:
     st.error(f"Error conectando a Google Sheets. Detalle: {e}")
     st.stop()
 
-# --- FUNCIONES DE LECTURA DE BD ---
+# --- FUNCIONES DE LECTURA (LIMPIEZA DE ESPACIOS INVISIBLES) ---
 def obtener_clientes():
     registros = hoja_clientes.get_all_records()
-    return {fila['Nombre']: str(fila['Correo']) for fila in registros if 'Nombre' in fila}
+    clientes_limpios = {}
+    for fila in registros:
+        # Quitamos espacios accidentales en los títulos de Excel
+        fila_limpia = {str(k).strip(): v for k, v in fila.items()}
+        if 'Nombre' in fila_limpia and fila_limpia['Nombre']:
+            clientes_limpios[str(fila_limpia['Nombre']).strip()] = str(fila_limpia.get('Correo', '')).strip()
+    return clientes_limpios
 
 def obtener_servicios():
     registros = hoja_servicios.get_all_records()
-    return {fila['Servicio']: float(fila['Precio']) for fila in registros if 'Servicio' in fila}
+    serv_limpios = {}
+    for fila in registros:
+        fila_limpia = {str(k).strip(): v for k, v in fila.items()}
+        if 'Servicio' in fila_limpia and fila_limpia['Servicio']:
+            try:
+                serv_limpios[str(fila_limpia['Servicio']).strip()] = float(fila_limpia.get('Precio', 0.0))
+            except:
+                serv_limpios[str(fila_limpia['Servicio']).strip()] = 0.0
+    return serv_limpios
 
 clientes_db = obtener_clientes()
 servicios_db = obtener_servicios()
+
+# --- FUNCIONES DE AUTOCOMPLETADO (CALLBACKS) ---
+def autocompletar_correo():
+    sel = st.session_state["combo_cliente"]
+    if sel != "(Nuevo Cliente)" and sel in clientes_db:
+        st.session_state["input_correo"] = clientes_db[sel]
+    else:
+        st.session_state["input_correo"] = ""
+
+def autocompletar_precio(i):
+    desc = st.session_state[f"desc_{i}"]
+    if desc in servicios_db:
+        st.session_state[f"precio_{i}"] = float(servicios_db[desc])
+        # Opcional: Si la cantidad está en 0, ponerle 1 automáticamente
+        if st.session_state.get(f"cant_{i}", 0.0) == 0.0:
+            st.session_state[f"cant_{i}"] = 1.0
+    else:
+        st.session_state[f"precio_{i}"] = 0.0
+
+# --- INICIALIZAR MEMORIA (SESSION STATE) ---
+if "input_correo" not in st.session_state:
+    st.session_state["input_correo"] = ""
+for i in range(5):
+    if f"precio_{i}" not in st.session_state:
+        st.session_state[f"precio_{i}"] = 0.0
+    if f"cant_{i}" not in st.session_state:
+        st.session_state[f"cant_{i}"] = 0.0
+
 
 # --- INTERFAZ WEB ---
 st.title("🌿 MIRANDA SERVICE")
@@ -76,14 +114,16 @@ with tab1:
     st.subheader("Datos del Cliente")
     
     nombres_clientes = ["(Nuevo Cliente)"] + list(clientes_db.keys())
-    cliente_seleccionado = st.selectbox("Selecciona un cliente o elige (Nuevo Cliente)", nombres_clientes)
     
-    if cliente_seleccionado == "(Nuevo Cliente)":
+    # El dropdown que activa el autocompletado del correo
+    st.selectbox("Selecciona un cliente o elige (Nuevo Cliente)", nombres_clientes, key="combo_cliente", on_change=autocompletar_correo)
+    
+    if st.session_state["combo_cliente"] == "(Nuevo Cliente)":
         nombre_cliente = st.text_input("Nombre del Nuevo Cliente")
-        correo_cliente = st.text_input("Correo Electrónico")
     else:
-        nombre_cliente = cliente_seleccionado
-        correo_cliente = st.text_input("Correo Electrónico", value=clientes_db.get(cliente_seleccionado, ""))
+        nombre_cliente = st.session_state["combo_cliente"]
+        
+    correo_cliente = st.text_input("Correo Electrónico", key="input_correo")
 
     st.divider()
     st.subheader("Detalles del Servicio")
@@ -95,29 +135,29 @@ with tab1:
     precios = []
     gran_total = 0.0
 
+    # Dibujamos las 5 filas con memoria reactiva
     for i in range(5):
         col1, col2, col3 = st.columns([3, 1, 1])
         with col1:
-            desc = st.selectbox(f"Servicio {i+1}", nombres_servicios, key=f"desc_{i}")
+            desc = st.selectbox(f"Servicio {i+1}", nombres_servicios, key=f"desc_{i}", on_change=autocompletar_precio, args=(i,))
             descripciones.append(desc)
         with col2:
             cant = st.number_input("Cant.", min_value=0.0, step=1.0, key=f"cant_{i}")
             cantidades.append(cant)
         with col3:
-            precio_sugerido = servicios_db.get(desc, 0.0) if desc else 0.0
-            precio = st.number_input("Precio ($)", min_value=0.0, value=float(precio_sugerido), step=1.0, key=f"precio_{i}")
+            precio = st.number_input("Precio ($)", min_value=0.0, step=1.0, key=f"precio_{i}")
             precios.append(precio)
             
         gran_total += (cant * precio)
 
     st.subheader(f"Total a Pagar: ${gran_total:,.2f}")
-    enviar_correo = st.checkbox("Enviar PDF por Correo automáticamente al cliente y a mí", value=True)
+    enviar_correo = st.checkbox("Enviar PDF por Correo automáticamente", value=True)
 
     if st.button("📄 Generar Factura", type="primary", use_container_width=True):
         if not nombre_cliente.strip():
             st.warning("Debes ingresar el nombre del cliente.")
         elif gran_total == 0:
-            st.warning("Debes agregar al menos un servicio con cantidad y precio.")
+            st.warning("Debes agregar al menos un servicio válido.")
         else:
             with st.spinner("Generando documento y actualizando base de datos..."):
                 if nombre_cliente not in clientes_db or clientes_db[nombre_cliente] != correo_cliente:
@@ -210,17 +250,13 @@ with tab1:
 # PESTAÑA 2: HISTORIAL Y COBROS
 # ==========================================
 with tab2:
-    st.subheader("Historial de Facturas (En vivo desde Google Sheets)")
-    
+    st.subheader("Historial de Facturas (En vivo)")
     registros_fac = hoja_facturas.get_all_records()
     
     if not registros_fac:
-        st.info("Aún no hay facturas registradas en la base de datos.")
+        st.info("Aún no hay facturas registradas.")
     else:
-        # Convertimos los datos de Google Sheets a una tabla bonita (DataFrame)
         df_facturas = pd.DataFrame(registros_fac)
-        
-        # Filtro de Estado
         filtro_estado = st.radio("Filtrar por:", ["Todas", "Pendiente", "Pagado"], horizontal=True)
         
         if filtro_estado != "Todas":
@@ -233,20 +269,18 @@ with tab2:
         st.divider()
         st.write("### Marcar Factura como Pagada")
         
-        # Obtenemos solo las facturas que están Pendientes
-        facturas_pendientes = df_facturas[df_facturas["Estado"] == "Pendiente"]["Folio"].tolist()
-        
-        if facturas_pendientes:
-            folio_a_pagar = st.selectbox("Selecciona el Folio que ya fue pagado:", facturas_pendientes)
-            if st.button("💰 Confirmar Pago", type="primary"):
-                # Buscar la fila exacta en Google Sheets para actualizarla
-                celda = hoja_facturas.find(folio_a_pagar)
-                if celda:
-                    hoja_facturas.update_cell(celda.row, 6, "Pagado") # Columna 6 es la del Estado
-                    st.success(f"¡Factura {folio_a_pagar} marcada como Pagada con éxito!")
-                    st.rerun() # Refresca la página para mostrar los cambios
-        else:
-            st.success("¡Excelente! No tienes facturas pendientes de cobro.")
+        if "Folio" in df_facturas.columns:
+            facturas_pendientes = df_facturas[df_facturas["Estado"] == "Pendiente"]["Folio"].tolist()
+            if facturas_pendientes:
+                folio_a_pagar = st.selectbox("Selecciona el Folio pagado:", facturas_pendientes)
+                if st.button("💰 Confirmar Pago", type="primary"):
+                    celda = hoja_facturas.find(folio_a_pagar)
+                    if celda:
+                        hoja_facturas.update_cell(celda.row, 6, "Pagado") 
+                        st.success(f"¡Factura {folio_a_pagar} marcada como Pagada!")
+                        st.rerun() 
+            else:
+                st.success("¡Excelente! No tienes facturas pendientes.")
 
 # ==========================================
 # PESTAÑA 3: DIRECTORIO
@@ -266,6 +300,3 @@ with tab3:
         st.dataframe(df_servicios, use_container_width=True, hide_index=True)
     else:
         st.info("No hay servicios registrados.")
-        
-    st.divider()
-    st.info("💡 Para agregar nuevos clientes o servicios a este directorio, simplemente escríbelos en la pestaña 'Crear Factura'. El sistema los guardará automáticamente al emitir el recibo. Para borrar o modificar registros antiguos, edita directamente tu archivo 'Miranda_DB' en tu App de Google Sheets.")
