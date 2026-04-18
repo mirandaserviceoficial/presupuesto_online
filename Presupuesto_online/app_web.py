@@ -6,23 +6,38 @@ import datetime
 import os
 import smtplib
 from email.message import EmailMessage
+import json
+import pandas as pd # Necesario para mostrar tablas bonitas en Streamlit
 
 # --- CONFIGURACIÓN DE PÁGINA DE STREAMLIT ---
-# Esto hace que se vea bien en el celular
 st.set_page_config(page_title="Miranda Service", page_icon="🌿", layout="centered")
 
 # --- DATOS DE MIRANDA SERVICE ---
 CORREO_PAPA = "MirandaServiceOficial@gmail.com"
-PASSWORD_APP_GMAIL = "yanw kulx ewxp nccg" # <-- RECUERDA PONERLA AQUÍ
+
+# Intentar leer la contraseña de Gmail desde los Secretos de la Nube. Si falla, usa un texto por defecto.
+try:
+    PASSWORD_APP_GMAIL = st.secrets["gmail_password"]
+except:
+    PASSWORD_APP_GMAIL = "AQUI_TU_CONTRASENA_DE_APLICACION"
+
 DIRECCION_PAPA = "190 Shannon Blvd, Middletown, DE 19709"
 TELEFONO_PAPA = "(302) 584-2281"
 PLANTILLA_IMG = "plantilla_presupuesto.png"
 
-# --- CONEXIÓN A GOOGLE SHEETS ---
+# --- CONEXIÓN A GOOGLE SHEETS (CORREGIDA PARA LA NUBE) ---
 @st.cache_resource
 def conectar_bd():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales.json", scope)
+    
+    # El programa detecta si está en la nube (Streamlit) leyendo los secretos
+    if "google_creds_json" in st.secrets:
+        creds_dict = json.loads(st.secrets["google_creds_json"])
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    else:
+        # Si lo pruebas en tu compu y no tienes secretos configurados, intenta leer el archivo local
+        creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales.json", scope)
+        
     client = gspread.authorize(creds)
     sheet = client.open("Miranda_DB")
     return sheet
@@ -33,7 +48,7 @@ try:
     hoja_servicios = db.worksheet("Servicios")
     hoja_facturas = db.worksheet("Facturas")
 except Exception as e:
-    st.error(f"Error conectando a Google Sheets. Revisa el archivo credenciales.json. Detalle: {e}")
+    st.error(f"Error conectando a Google Sheets. Detalle: {e}")
     st.stop()
 
 # --- FUNCIONES DE LECTURA DE BD ---
@@ -45,7 +60,6 @@ def obtener_servicios():
     registros = hoja_servicios.get_all_records()
     return {fila['Servicio']: float(fila['Precio']) for fila in registros if 'Servicio' in fila}
 
-# Cargamos los datos actuales
 clientes_db = obtener_clientes()
 servicios_db = obtener_servicios()
 
@@ -76,16 +90,13 @@ with tab1:
     
     nombres_servicios = [""] + list(servicios_db.keys())
     
-    # Creamos listas para guardar los valores de las 5 filas
     descripciones = []
     cantidades = []
     precios = []
-    
     gran_total = 0.0
 
-    # Dibujamos 5 filas. En Streamlit usamos columnas para que se vea ordenado
     for i in range(5):
-        col1, col2, col3 = st.columns([3, 1, 1]) # Proporción de tamaños
+        col1, col2, col3 = st.columns([3, 1, 1])
         with col1:
             desc = st.selectbox(f"Servicio {i+1}", nombres_servicios, key=f"desc_{i}")
             descripciones.append(desc)
@@ -93,7 +104,6 @@ with tab1:
             cant = st.number_input("Cant.", min_value=0.0, step=1.0, key=f"cant_{i}")
             cantidades.append(cant)
         with col3:
-            # Si seleccionó un servicio que existe, sugerimos el precio automáticamente
             precio_sugerido = servicios_db.get(desc, 0.0) if desc else 0.0
             precio = st.number_input("Precio ($)", min_value=0.0, value=float(precio_sugerido), step=1.0, key=f"precio_{i}")
             precios.append(precio)
@@ -103,7 +113,6 @@ with tab1:
     st.subheader(f"Total a Pagar: ${gran_total:,.2f}")
     enviar_correo = st.checkbox("Enviar PDF por Correo automáticamente al cliente y a mí", value=True)
 
-    # BOTÓN PRINCIPAL
     if st.button("📄 Generar Factura", type="primary", use_container_width=True):
         if not nombre_cliente.strip():
             st.warning("Debes ingresar el nombre del cliente.")
@@ -111,25 +120,21 @@ with tab1:
             st.warning("Debes agregar al menos un servicio con cantidad y precio.")
         else:
             with st.spinner("Generando documento y actualizando base de datos..."):
-                # 1. Actualizar BD Clientes si es nuevo o cambió correo
                 if nombre_cliente not in clientes_db or clientes_db[nombre_cliente] != correo_cliente:
                     hoja_clientes.append_row([nombre_cliente, correo_cliente])
                 
-                # 2. Generar Folio
                 registros_facturas = hoja_facturas.get_all_values()
-                numero_folio = len(registros_facturas) # Si solo está el encabezado, será la fac 1
+                numero_folio = len(registros_facturas)
                 str_folio = f"FAC-{numero_folio:04d}"
                 
                 fecha_emision = datetime.date.today()
                 fecha_vencimiento = fecha_emision + datetime.timedelta(days=5)
 
-                # 3. Crear PDF
                 pdf = FPDF()
                 pdf.add_page()
                 if os.path.exists(PLANTILLA_IMG):
                     pdf.image(PLANTILLA_IMG, x=0, y=0, w=210)
                 
-                # Textos Fijos (Igual que en tu versión de escritorio)
                 pdf.set_font("Arial", 'B', size=10)
                 pdf.set_text_color(100, 100, 100)
                 pdf.text(120, 20, "MIRANDA SERVICE")
@@ -167,14 +172,11 @@ with tab1:
                 pdf.text(170, 159, f"${gran_total:,.2f}")
                 pdf.text(170, 178, f"${gran_total:,.2f}")
 
-                # Guardar PDF temporalmente
                 nombre_archivo = f"{str_folio}_{nombre_cliente.replace(' ', '_')}.pdf"
                 pdf.output(nombre_archivo)
                 
-                # 4. Guardar en Google Sheets (Historial Facturas)
                 hoja_facturas.append_row([str_folio, nombre_cliente, str(fecha_emision), str(fecha_vencimiento), f"${gran_total:,.2f}", "Pendiente", "Nube"])
 
-                # 5. Enviar Correo
                 mensaje_exito = f"Factura {str_folio} guardada en Google Sheets."
                 if enviar_correo and correo_cliente and PASSWORD_APP_GMAIL != "AQUI_TU_CONTRASENA_DE_APLICACION":
                     try:
@@ -195,7 +197,6 @@ with tab1:
 
                 st.success(mensaje_exito)
                 
-                # Botón nativo de la web para descargar el PDF al celular/PC
                 with open(nombre_archivo, "rb") as pdf_file:
                     st.download_button(
                         label="⬇️ Descargar PDF",
@@ -206,10 +207,65 @@ with tab1:
                     )
 
 # ==========================================
-# PESTAÑAS 2 Y 3 (Pendientes de detallar)
+# PESTAÑA 2: HISTORIAL Y COBROS
 # ==========================================
 with tab2:
-    st.write("Aquí cargaremos la tabla directamente de tu Google Sheets en el siguiente paso.")
+    st.subheader("Historial de Facturas (En vivo desde Google Sheets)")
     
+    registros_fac = hoja_facturas.get_all_records()
+    
+    if not registros_fac:
+        st.info("Aún no hay facturas registradas en la base de datos.")
+    else:
+        # Convertimos los datos de Google Sheets a una tabla bonita (DataFrame)
+        df_facturas = pd.DataFrame(registros_fac)
+        
+        # Filtro de Estado
+        filtro_estado = st.radio("Filtrar por:", ["Todas", "Pendiente", "Pagado"], horizontal=True)
+        
+        if filtro_estado != "Todas":
+            df_mostrar = df_facturas[df_facturas["Estado"] == filtro_estado]
+        else:
+            df_mostrar = df_facturas
+            
+        st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.write("### Marcar Factura como Pagada")
+        
+        # Obtenemos solo las facturas que están Pendientes
+        facturas_pendientes = df_facturas[df_facturas["Estado"] == "Pendiente"]["Folio"].tolist()
+        
+        if facturas_pendientes:
+            folio_a_pagar = st.selectbox("Selecciona el Folio que ya fue pagado:", facturas_pendientes)
+            if st.button("💰 Confirmar Pago", type="primary"):
+                # Buscar la fila exacta en Google Sheets para actualizarla
+                celda = hoja_facturas.find(folio_a_pagar)
+                if celda:
+                    hoja_facturas.update_cell(celda.row, 6, "Pagado") # Columna 6 es la del Estado
+                    st.success(f"¡Factura {folio_a_pagar} marcada como Pagada con éxito!")
+                    st.rerun() # Refresca la página para mostrar los cambios
+        else:
+            st.success("¡Excelente! No tienes facturas pendientes de cobro.")
+
+# ==========================================
+# PESTAÑA 3: DIRECTORIO
+# ==========================================
 with tab3:
-    st.write("Aquí pondremos los controles para agregar/borrar clientes y servicios directamente desde la web hacia Google Sheets.")
+    st.subheader("Directorio de Clientes")
+    if clientes_db:
+        df_clientes = pd.DataFrame(list(clientes_db.items()), columns=["Nombre", "Correo"])
+        st.dataframe(df_clientes, use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay clientes registrados.")
+        
+    st.divider()
+    st.subheader("Catálogo de Servicios")
+    if servicios_db:
+        df_servicios = pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio"])
+        st.dataframe(df_servicios, use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay servicios registrados.")
+        
+    st.divider()
+    st.info("💡 Para agregar nuevos clientes o servicios a este directorio, simplemente escríbelos en la pestaña 'Crear Factura'. El sistema los guardará automáticamente al emitir el recibo. Para borrar o modificar registros antiguos, edita directamente tu archivo 'Miranda_DB' en tu App de Google Sheets.")
