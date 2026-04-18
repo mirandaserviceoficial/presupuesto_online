@@ -285,50 +285,93 @@ with tab2:
                 st.success("¡Excelente! No tienes facturas pendientes.")
 
 # ==========================================
-# PESTAÑA 3: DIRECTORIO
+# PESTAÑA 3: DIRECTORIO (GESTIÓN COMPLETA)
 # ==========================================
 with tab3:
-    st.subheader("Directorio de Clientes")
+    # --- SECCIÓN DE CLIENTES ---
+    st.header("👥 Gestión de Clientes")
     
-    # --- Formulario para Agregar Cliente ---
-    with st.expander("➕ Agregar Nuevo Cliente"):
-        with st.form("form_nuevo_cliente"):
-            nuevo_nom_cli = st.text_input("Nombre del Cliente")
-            nuevo_cor_cli = st.text_input("Correo Electrónico")
-            
-            if st.form_submit_button("Guardar Cliente", type="primary"):
-                if nuevo_nom_cli.strip():
-                    hoja_clientes.append_row([nuevo_nom_cli.strip(), nuevo_cor_cli.strip()])
-                    st.success(f"¡Cliente '{nuevo_nom_cli}' guardado! Recarga la página para verlo en la lista.")
-                else:
-                    st.warning("El nombre es obligatorio.")
+    col_tab_cli, col_ops_cli = st.columns([2, 1])
+    
+    with col_tab_cli:
+        if clientes_db:
+            df_clientes = pd.DataFrame(list(clientes_db.items()), columns=["Nombre", "Correo"])
+            st.dataframe(df_clientes, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay clientes registrados.")
 
-    # Mostrar tabla de clientes
-    if clientes_db:
-        df_clientes = pd.DataFrame(list(clientes_db.items()), columns=["Nombre", "Correo"])
-        st.dataframe(df_clientes, use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay clientes registrados.")
+    with col_ops_cli:
+        with st.expander("➕ Agregar"):
+            with st.form("add_cli", clear_on_submit=True):
+                n_nom = st.text_input("Nombre")
+                n_cor = st.text_input("Correo")
+                if st.form_submit_button("Guardar"):
+                    if n_nom:
+                        hoja_clientes.append_row([n_nom.strip(), n_cor.strip()])
+                        st.success("Añadido")
+                        st.rerun()
         
+        with st.expander("✏️ Editar / Borrar"):
+            if clientes_db:
+                cli_a_mod = st.selectbox("Selecciona Cliente", list(clientes_db.keys()))
+                nuevo_nom = st.text_input("Nuevo Nombre", value=cli_a_mod)
+                nuevo_cor = st.text_input("Nuevo Correo", value=clientes_db[cli_a_mod])
+                
+                c1, c2 = st.columns(2)
+                if c1.button("Actualizar", use_container_width=True):
+                    celda = hoja_clientes.find(cli_a_mod)
+                    hoja_clientes.update_cell(celda.row, 1, nuevo_nom)
+                    hoja_clientes.update_cell(celda.row, 2, nuevo_cor)
+                    st.success("Actualizado")
+                    st.rerun()
+                
+                if c2.button("Eliminar", use_container_width=True, type="secondary"):
+                    celda = hoja_clientes.find(cli_a_mod)
+                    hoja_clientes.delete_rows(celda.row)
+                    st.warning("Eliminado")
+                    st.rerun()
+
     st.divider()
-    st.subheader("Catálogo de Servicios")
 
-    # --- Formulario para Agregar Servicio ---
-    with st.expander("➕ Agregar Nuevo Servicio"):
-        with st.form("form_nuevo_servicio"):
-            nuevo_nom_ser = st.text_input("Descripción del Servicio")
-            nuevo_pre_ser = st.number_input("Precio ($)", min_value=0.0, step=1.0)
-            
-            if st.form_submit_button("Guardar Servicio", type="primary"):
-                if nuevo_nom_ser.strip():
-                    hoja_servicios.append_row([nuevo_nom_ser.strip(), nuevo_pre_ser])
-                    st.success(f"¡Servicio '{nuevo_nom_ser}' guardado! Recarga la página para verlo en la lista.")
-                else:
-                    st.warning("La descripción es obligatoria.")
+    # --- SECCIÓN DE SERVICIOS ---
+    st.header("🛠️ Catálogo de Servicios")
+    
+    col_tab_ser, col_ops_ser = st.columns([2, 1])
+    
+    with col_tab_ser:
+        if servicios_db:
+            df_servicios = pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio"])
+            st.dataframe(df_servicios, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay servicios registrados.")
 
-    # Mostrar tabla de servicios
-    if servicios_db:
-        df_servicios = pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio"])
-        st.dataframe(df_servicios, use_container_width=True, hide_index=True)
-    else:
-        st.info("No hay servicios registrados.")
+    with col_ops_ser:
+        with st.expander("➕ Agregar"):
+            with st.form("add_ser", clear_on_submit=True):
+                s_nom = st.text_input("Servicio")
+                s_pre = st.number_input("Precio", min_value=0.0)
+                if st.form_submit_button("Guardar"):
+                    if s_nom:
+                        hoja_servicios.append_row([s_nom.strip(), s_pre])
+                        st.success("Añadido")
+                        st.rerun()
+
+        with st.expander("✏️ Editar / Borrar"):
+            if servicios_db:
+                ser_a_mod = st.selectbox("Selecciona Servicio", list(servicios_db.keys()))
+                s_nuevo_nom = st.text_input("Nueva Descripción", value=ser_a_mod)
+                s_nuevo_pre = st.number_input("Nuevo Precio", value=float(servicios_db[ser_a_mod]))
+                
+                b1, b2 = st.columns(2)
+                if b1.button("Actualizar ", use_container_width=True):
+                    celda = hoja_servicios.find(ser_a_mod)
+                    hoja_servicios.update_cell(celda.row, 1, s_nuevo_nom)
+                    hoja_servicios.update_cell(celda.row, 2, s_nuevo_pre)
+                    st.success("Actualizado")
+                    st.rerun()
+                
+                if b2.button("Eliminar ", use_container_width=True):
+                    celda = hoja_servicios.find(ser_a_mod)
+                    hoja_servicios.delete_rows(celda.row)
+                    st.warning("Eliminado")
+                    st.rerun()
