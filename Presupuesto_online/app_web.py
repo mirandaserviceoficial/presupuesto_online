@@ -20,13 +20,13 @@ DIRECCION_PAPA = "190 Shannon Blvd, Middletown, DE 19709"
 TELEFONO_PAPA = "(302) 584-2281"
 ID_CARPETA_DRIVE = "1J2styDUkdz2oI9gfEciZWMvGU8OOzGBK"
 
-# Intentar leer secretos de Streamlit Cloud
+# Intentar leer secretos de Streamlit Cloud (Seguridad)
 try:
     PASSWORD_APP_GMAIL = st.secrets["gmail_password"]
 except:
     PASSWORD_APP_GMAIL = "AQUI_TU_CONTRASENA_DE_APLICACION"
 
-# Manejo de rutas para Linux/Windows (Plantilla)
+# Manejo de rutas absolutas para compatibilidad con servidores Linux
 DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
 PLANTILLA_IMG = os.path.join(DIRECTORIO_ACTUAL, "plantilla_presupuesto.png")
 
@@ -73,14 +73,15 @@ def subir_a_drive(nombre_archivo):
     drive_service.permissions().create(fileId=file.get('id'), body={'type': 'anyone', 'role': 'reader'}).execute()
     return file.get('webViewLink')
 
-# --- LÓGICA DE AUTOCOMPLETADO ---
+# --- LÓGICA DE AUTOCOMPLETADO Y MEMORIA ---
 clientes_db = obtener_clientes()
 servicios_db = obtener_servicios()
 
 if "input_correo" not in st.session_state: st.session_state["input_correo"] = ""
 for i in range(5):
     if f"precio_{i}" not in st.session_state: st.session_state[f"precio_{i}"] = 0.0
-    if f"cant_{i}" not in st.session_state: st.session_state[f"cant_{i}"] = 0.0
+    # Inicialización de cantidad como ENTERO (0 en lugar de 0.0)
+    if f"cant_{i}" not in st.session_state: st.session_state[f"cant_{i}"] = 0
 
 def cb_cliente():
     sel = st.session_state["combo_cliente"]
@@ -90,7 +91,8 @@ def cb_precio(i):
     ds = st.session_state[f"desc_{i}"]
     if ds in servicios_db:
         st.session_state[f"precio_{i}"] = servicios_db[ds]
-        if st.session_state[f"cant_{i}"] == 0: st.session_state[f"cant_{i}"] = 1.0
+        # Cantidad automática como ENTERO (1)
+        if st.session_state[f"cant_{i}"] == 0: st.session_state[f"cant_{i}"] = 1
 
 # --- INTERFAZ ---
 st.title("🌿 MIRANDA SERVICE ERP")
@@ -106,31 +108,37 @@ with tab1:
     rows = []
     g_total = 0.0
     for i in range(5):
-        c1, c2, c3 = st.columns([3, 1, 1])
-        with c1: d = st.selectbox(f"Servicio {i+1}", [""] + list(servicios_db.keys()), key=f"desc_{i}", on_change=cb_precio, args=(i,))
-        with c2: c = st.number_input("Cant.", min_value=0.0, key=f"cant_{i}")
-        with c3: p = st.number_input("Precio", min_value=0.0, key=f"precio_{i}")
+        col_s, col_c, col_p = st.columns([3, 1, 1])
+        with col_s: 
+            d = st.selectbox(f"Servicio {i+1}", [""] + list(servicios_db.keys()), key=f"desc_{i}", on_change=cb_precio, args=(i,))
+        with col_c: 
+            # Configurado como ENTERO con step=1
+            c = st.number_input("Cant.", min_value=0, step=1, key=f"cant_{i}")
+        with col_p: 
+            p = st.number_input("Precio ($)", min_value=0.0, key=f"precio_{i}")
         rows.append((d, c, p))
-        g_total += (c * p)
+        g_total += (float(c) * p)
 
     st.subheader(f"Total: ${g_total:,.2f}")
+    enviar_correo = st.checkbox("Enviar PDF por Correo automáticamente", value=True)
+
     if st.button("🚀 Emitir y Enviar", type="primary", use_container_width=True):
         if not nom_cli or g_total == 0:
-            st.warning("Datos incompletos")
+            st.warning("Datos incompletos. Asegúrate de ingresar un cliente y al menos un servicio.")
         else:
-            with st.spinner("Procesando..."):
-                # Registro Cliente
+            with st.spinner("Generando factura y subiendo a la nube..."):
                 if nom_cli not in clientes_db: hoja_clientes.append_row([nom_cli, cor_cli])
                 
-                # Folio y Fechas
                 folio = f"FAC-{len(hoja_facturas.get_all_values()):04d}"
                 f_emision = datetime.date.today()
                 f_venc = f_emision + datetime.timedelta(days=5)
                 
-                # PDF
                 pdf = FPDF()
                 pdf.add_page()
-                if os.path.exists(PLANTILLA_IMG): pdf.image(PLANTILLA_IMG, x=0, y=0, w=210)
+                if os.path.exists(PLANTILLA_IMG): 
+                    pdf.image(PLANTILLA_IMG, x=0, y=0, w=210)
+                else:
+                    st.error(f"No se encontró la plantilla en: {PLANTILLA_IMG}")
                 
                 pdf.set_font("Arial", 'B', 10); pdf.set_text_color(100,100,100)
                 pdf.text(120, 20, "MIRANDA SERVICE"); pdf.text(120, 25, DIRECCION_PAPA)
@@ -157,22 +165,24 @@ with tab1:
                 fname = f"{folio}_{nom_cli.replace(' ','_')}.pdf"
                 pdf.output(fname)
                 
-                # Drive y Sheets
                 link = subir_a_drive(fname)
                 hoja_facturas.append_row([folio, nom_cli, str(f_emision), str(f_venc), f"${g_total:,.2f}", "Pendiente", link])
                 
-                # Email
-                if cor_cli and PASSWORD_APP_GMAIL != "AQUI":
-                    msg = EmailMessage()
-                    msg['Subject'] = f'Invoice {folio} - Miranda Service'
-                    msg['From'] = CORREO_PAPA; msg['To'] = cor_cli; msg['Cc'] = CORREO_PAPA
-                    msg.set_content(f"Hi {nom_cli},\n\nAttached is invoice {folio}.\n\nThanks,\nMiranda Service")
-                    with open(fname, 'rb') as f: msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=fname)
-                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
-                        s.login(CORREO_PAPA, PASSWORD_APP_GMAIL); s.send_message(msg)
+                if cor_cli and PASSWORD_APP_GMAIL != "AQUI_TU_CONTRASENA_DE_APLICACION":
+                    try:
+                        msg = EmailMessage()
+                        msg['Subject'] = f'Invoice {folio} - Miranda Service'
+                        msg['From'] = CORREO_PAPA; msg['To'] = cor_cli; msg['Cc'] = CORREO_PAPA
+                        msg.set_content(f"Hi {nom_cli},\n\nAttached is invoice {folio}.\n\nThanks,\nMiranda Service")
+                        with open(fname, 'rb') as f: msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=fname)
+                        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
+                            s.login(CORREO_PAPA, PASSWORD_APP_GMAIL); s.send_message(msg)
+                    except Exception as email_err:
+                        st.error(f"Error enviando correo: {email_err}")
                 
-                st.success(f"Emitida {folio}")
-                with open(fname, "rb") as f: st.download_button("⬇️ Descargar PDF", f, file_name=fname)
+                st.success(f"Factura {folio} emitida y guardada correctamente.")
+                with open(fname, "rb") as f: 
+                    st.download_button("⬇️ Descargar PDF", f, file_name=fname, type="primary")
                 os.remove(fname)
 
 # TAB 2: HISTORIAL
@@ -181,55 +191,69 @@ with tab2:
     data_fac = hoja_facturas.get_all_records()
     if data_fac:
         df = pd.DataFrame(data_fac)
-        st.dataframe(df, column_config={"Ruta_PDF": st.column_config.LinkColumn("Archivo", display_text="📥 Abrir")}, hide_index=True)
+        st.dataframe(
+            df, 
+            column_config={"Ruta_PDF": st.column_config.LinkColumn("Archivo PDF", display_text="📥 Abrir")}, 
+            hide_index=True,
+            use_container_width=True
+        )
         
         pendientes = df[df["Estado"] == "Pendiente"]["Folio"].tolist()
         if pendientes:
-            f_pago = st.selectbox("Marcar como Pagada:", pendientes)
-            if st.button("💰 Registrar Pago"):
+            st.divider()
+            f_pago = st.selectbox("Registrar pago de la factura:", pendientes)
+            if st.button("💰 Confirmar Pago", use_container_width=True):
                 cell = hoja_facturas.find(f_pago)
                 hoja_facturas.update_cell(cell.row, 6, "Pagado")
+                st.success(f"Factura {f_pago} actualizada.")
                 st.rerun()
-    else: st.info("Sin registros")
+    else: 
+        st.info("No hay facturas registradas en la base de datos.")
 
 # TAB 3: DIRECTORIO
 with tab3:
-    # CLIENTES
+    # SECCIÓN CLIENTES
     st.header("👥 Clientes")
     c1, c2 = st.columns([2, 1])
-    with c1: st.dataframe(pd.DataFrame(list(clientes_db.items()), columns=["Nombre", "Correo"]), hide_index=True)
+    with c1: 
+        st.dataframe(pd.DataFrame(list(clientes_db.items()), columns=["Nombre", "Correo"]), hide_index=True, use_container_width=True)
     with c2:
         with st.expander("➕ Añadir"):
             n_n = st.text_input("Nombre cliente")
             n_c = st.text_input("Correo cliente")
-            if st.button("Guardar Cli"):
+            if st.button("Guardar Nuevo Cliente"):
                 hoja_clientes.append_row([n_n, n_c]); st.rerun()
-        with st.expander("✏️ Editar/Borrar"):
-            c_sel = st.selectbox("Elegir cliente", list(clientes_db.keys()))
-            nn = st.text_input("Nuevo Nom", value=c_sel)
-            nc = st.text_input("Nuevo Cor", value=clientes_db[c_sel])
-            if st.button("Actualizar Cli"):
-                r = hoja_clientes.find(c_sel).row
-                hoja_clientes.update_cell(r, 1, nn); hoja_clientes.update_cell(r, 2, nc); st.rerun()
-            if st.button("Eliminar Cli"):
-                hoja_clientes.delete_rows(hoja_clientes.find(c_sel).row); st.rerun()
+        with st.expander("✏️ Gestionar"):
+            if clientes_db:
+                c_sel = st.selectbox("Elegir cliente", list(clientes_db.keys()))
+                nn = st.text_input("Editar Nombre", value=c_sel)
+                nc = st.text_input("Editar Correo", value=clientes_db[c_sel])
+                if st.button("Actualizar Cliente"):
+                    r = hoja_clientes.find(c_sel).row
+                    hoja_clientes.update_cell(r, 1, nn); hoja_clientes.update_cell(r, 2, nc); st.rerun()
+                if st.button("🗑️ Eliminar Cliente", type="secondary"):
+                    hoja_clientes.delete_rows(hoja_clientes.find(c_sel).row); st.rerun()
 
-    # SERVICIOS
+    st.divider()
+
+    # SECCIÓN SERVICIOS
     st.header("🛠️ Servicios")
     s1, s2 = st.columns([2, 1])
-    with s1: st.dataframe(pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio"]), hide_index=True)
+    with s1: 
+        st.dataframe(pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio"]), hide_index=True, use_container_width=True)
     with s2:
         with st.expander("➕ Añadir"):
-            s_n = st.text_input("Nombre servicio")
-            s_p = st.number_input("Precio servicio")
-            if st.button("Guardar Ser"):
+            s_n = st.text_input("Descripción servicio")
+            s_p = st.number_input("Precio base", min_value=0.0)
+            if st.button("Guardar Nuevo Servicio"):
                 hoja_servicios.append_row([s_n, s_p]); st.rerun()
-        with st.expander("✏️ Editar/Borrar"):
-            s_sel = st.selectbox("Elegir servicio", list(servicios_db.keys()))
-            sn = st.text_input("Nueva Desc", value=s_sel)
-            sp = st.number_input("Nuevo Pre", value=servicios_db[s_sel])
-            if st.button("Actualizar Ser"):
-                r = hoja_servicios.find(s_sel).row
-                hoja_servicios.update_cell(r, 1, sn); hoja_servicios.update_cell(r, 2, sp); st.rerun()
-            if st.button("Eliminar Ser"):
-                hoja_servicios.delete_rows(hoja_servicios.find(s_sel).row); st.rerun()
+        with st.expander("✏️ Gestionar"):
+            if servicios_db:
+                s_sel = st.selectbox("Elegir servicio", list(servicios_db.keys()))
+                sn = st.text_input("Editar Descripción", value=s_sel)
+                sp = st.number_input("Editar Precio", value=servicios_db[s_sel])
+                if st.button("Actualizar Servicio"):
+                    r = hoja_servicios.find(s_sel).row
+                    hoja_servicios.update_cell(r, 1, sn); hoja_servicios.update_cell(r, 2, sp); st.rerun()
+                if st.button("🗑️ Eliminar Servicio"):
+                    hoja_servicios.delete_rows(hoja_servicios.find(s_sel).row); st.rerun()
