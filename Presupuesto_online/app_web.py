@@ -15,14 +15,14 @@ st.set_page_config(page_title="Miranda Service ERP", page_icon="🌿", layout="c
 
 # --- DATOS DE CONFIGURACIÓN ---
 CORREO_PAPA = "MirandaServiceOficial@gmail.com"
-DIRECCION_PAPA = "190 Shannon Blvd, Middletown, DE 19709"
+DIRECCION_PAPA = "980 Dixie Line Rd, Newark, DE 19713, EE. UU."
 TELEFONO_PAPA = "(302) 584-2281"
 
 # Intentar leer secretos de Streamlit Cloud
 try:
     PASSWORD_APP_GMAIL = st.secrets["gmail_password"]
 except:
-    PASSWORD_APP_GMAIL = "AQUI_TU_CONTRASENA_DE_APLICACION"
+    PASSWORD_APP_GMAIL = "yanw kulx ewxp nccg"
 
 # Manejo de rutas absolutas
 DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
