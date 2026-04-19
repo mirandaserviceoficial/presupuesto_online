@@ -163,7 +163,7 @@ with tab1:
 
     enviar_correo = st.checkbox("Enviar PDF automáticamente", value=True)
 
-    if st.button("🚀 Emitir Factura", type="primary", use_container_width=True):
+    if st.button("🚀 Emitir Factura", type="primary", width="stretch"):
         if not nom_cli or not dir_cli or g_total == 0:
             st.warning("Completa Nombre, Dirección y al menos un servicio.")
         else:
@@ -309,7 +309,7 @@ with tab1:
                     pdf.set_font("Helvetica", '', 9)
                 
                 # 8. PIE DE PÁGINA: AGRADECIMIENTO Y TÉRMINOS
-                pdf.set_set_color(100, 100, 100) # Gris oscuro
+                pdf.set_text_color(100, 100, 100) # Gris oscuro
                 pdf.set_font("Helvetica", '', 8)
                 footer_text = "Thank you for choosing Miranda Service! Your landscaping, professionalized.\nFull payment is due within 5 days. Late fee of 5% may apply after Due Date."
                 pdf.set_xy(15, 250)
@@ -337,7 +337,7 @@ with tab1:
                         st.error(f"Factura generada, error enviando correo: {email_err}")
                 
                 st.success(f"¡Factura {folio} emitida y guardada!")
-                with open(fname, "rb") as f: st.download_button("⬇️ Descargar PDF Profesional", f, file_name=fname, type="primary", use_container_width=True)
+                with open(fname, "rb") as f: st.download_button("⬇️ Descargar PDF Profesional", f, file_name=fname, type="primary", width="stretch")
                 os.remove(fname)
 
 # ==========================================
@@ -349,12 +349,12 @@ with tab2:
     if data_fac:
         df = pd.DataFrame(data_fac)
         if 'Ruta_PDF' in df.columns: df = df.drop(columns=['Ruta_PDF'])
-        st.dataframe(df, hide_index=True, use_container_width=True)
+        st.dataframe(df, hide_index=True, width="stretch")
         pendientes = df[df["Estado"] == "Pendiente"]["Folio"].tolist()
         if pendientes:
             st.divider()
             f_pago = st.selectbox("Registrar pago de la factura:", pendientes)
-            if st.button("💰 Confirmar Pago", use_container_width=True):
+            if st.button("💰 Confirmar Pago", width="stretch"):
                 cell = hoja_facturas.find(f_pago)
                 hoja_facturas.update_cell(cell.row, 6, "Pagado")
                 obtener_facturas_records.clear(); st.success(f"Factura {f_pago} actualizada."); st.rerun()
@@ -366,7 +366,7 @@ with tab3:
     with c1: 
         df_c = pd.DataFrame(list(clientes_db.items()), columns=["Nombre", "Data"])
         df_c["Correo"] = df_c["Data"].apply(lambda x: x['correo'])
-        st.dataframe(df_c[["Nombre", "Correo"]], hide_index=True, use_container_width=True)
+        st.dataframe(df_c[["Nombre", "Correo"]], hide_index=True, width="stretch")
     with c2:
         with st.expander("✏️ Gestionar"):
             if clientes_db:
@@ -378,7 +378,7 @@ with tab3:
     st.divider()
     st.header("🛠️ Servicios")
     s1, s2 = st.columns([2, 1])
-    with s1: st.dataframe(pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio"]), hide_index=True, use_container_width=True)
+    with s1: st.dataframe(pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio"]), hide_index=True, width="stretch")
     with s2:
         with st.expander("➕ Añadir"):
             s_n = st.text_input("Descripción servicio")
