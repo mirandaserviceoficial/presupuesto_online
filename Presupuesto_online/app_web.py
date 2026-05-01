@@ -257,44 +257,140 @@ with tab1:
                 with open(fname, "rb") as f: st.download_button("📥 Descargar PDF", f, file_name=fname, type="primary", width="stretch")
                 os.remove(fname)
 
-# --- Pestañas 2 y 3 (Gestión Restaurada) ---
+# --- Pestañas 2 y 3 (Gestión Actualizada) ---
 with tab2:
-    st.subheader("Historial")
+    st.subheader("Historial de Facturas")
     data = obtener_facturas_records()
     if data:
         df = pd.DataFrame(data)
-        if 'Ruta_PDF' in df.columns: df = df.drop(columns=['Ruta_PDF'])
-        st.dataframe(df, hide_index=True, width="stretch")
+        if 'Ruta_PDF' in df.columns: 
+            df = df.drop(columns=['Ruta_PDF'])
+        st.dataframe(df, hide_index=True, use_container_width=True)
+        
+        st.divider()
+        st.write("### Gestión de Facturas")
+        c_pago, c_rev, c_borrar = st.columns(3)
+        
         pendientes = df[df["Estado"] == "Pendiente"]["Folio"].tolist()
-        if pendientes:
-            f_pago = st.selectbox("Marcar pagada:", pendientes)
-            if st.button("💰 Confirmar Pago", width="stretch"):
-                cell = hoja_facturas.find(f_pago)
-                hoja_facturas.update_cell(cell.row, 6, "Pagado")
-                obtener_facturas_records.clear(); st.rerun()
-    else: st.info("Sin registros.")
+        pagadas = df[df["Estado"] == "Pagado"]["Folio"].tolist()
+        todas = df["Folio"].tolist()
+        
+        with c_pago:
+            if pendientes:
+                f_pago = st.selectbox("Marcar como Pagada:", pendientes, key="sb_pago")
+                if st.button("💰 Confirmar Pago", use_container_width=True):
+                    cell = hoja_facturas.find(f_pago)
+                    hoja_facturas.update_cell(cell.row, 6, "Pagado")
+                    obtener_facturas_records.clear()
+                    st.rerun()
+                    
+        with c_rev:
+            if pagadas:
+                f_rev = st.selectbox("Revertir a Pendiente:", pagadas, key="sb_rev")
+                if st.button("⏪ Quitar 'Pagado'", use_container_width=True):
+                    cell = hoja_facturas.find(f_rev)
+                    hoja_facturas.update_cell(cell.row, 6, "Pendiente")
+                    obtener_facturas_records.clear()
+                    st.rerun()
+                    
+        with c_borrar:
+            if todas:
+                f_del = st.selectbox("Eliminar Factura:", todas, key="sb_del_fac")
+                if st.button("🗑️ Borrar Factura", type="primary", use_container_width=True):
+                    cell = hoja_facturas.find(f_del)
+                    hoja_facturas.delete_rows(cell.row)
+                    obtener_facturas_records.clear()
+                    st.rerun()
+    else: 
+        st.info("Sin registros de facturas.")
 
 with tab3:
-    st.header("👥 Clientes")
-    c1, c2 = st.columns([2, 1])
-    with c1: 
-        df_c = pd.DataFrame([{'Nombre': k, 'Correo': v['correo']} for k, v in clientes_db.items()])
-        st.dataframe(df_c, hide_index=True, width="stretch")
-    with c2:
-        with st.expander("✏️ Editar/Borrar"):
-            if clientes_db:
-                c_sel = st.selectbox("Elegir cliente", list(clientes_db.keys()))
-                if st.button("🗑️ Eliminar Cliente", type="secondary"):
-                    hoja_clientes.delete_rows(hoja_clientes.find(c_sel).row)
-                    obtener_clientes.clear(); st.rerun()
+    st.header("👥 Gestión de Clientes")
+    # Mostrar tabla de clientes más completa
+    df_c = pd.DataFrame([{'Nombre': k, 'Correo': v['correo'], 'Teléfono': v['telefono'], 'Dirección': v['direccion']} for k, v in clientes_db.items()])
+    st.dataframe(df_c, hide_index=True, use_container_width=True)
     
+    t_c_add, t_c_edit, t_c_del = st.tabs(["➕ Añadir", "✏️ Editar", "🗑️ Borrar"])
+    
+    with t_c_add:
+        with st.form("form_add_cli"):
+            n_nom = st.text_input("Nombre del Cliente")
+            n_cor = st.text_input("Correo")
+            n_tel = st.text_input("Teléfono")
+            n_dir = st.text_area("Dirección")
+            if st.form_submit_button("Guardar Nuevo Cliente"):
+                if n_nom:
+                    hoja_clientes.append_row([n_nom, n_cor, n_dir, n_tel])
+                    obtener_clientes.clear()
+                    st.rerun()
+                else:
+                    st.warning("El nombre es obligatorio.")
+                    
+    with t_c_edit:
+        if clientes_db:
+            e_sel = st.selectbox("Seleccionar Cliente a Editar", list(clientes_db.keys()), key="sb_edit_cli")
+            datos_actuales = clientes_db[e_sel]
+            with st.form("form_edit_cli"):
+                e_nom = st.text_input("Nombre", value=e_sel)
+                e_cor = st.text_input("Correo", value=datos_actuales['correo'])
+                e_tel = st.text_input("Teléfono", value=datos_actuales['telefono'])
+                e_dir = st.text_area("Dirección", value=datos_actuales['direccion'])
+                if st.form_submit_button("Actualizar Cliente"):
+                    cell = hoja_clientes.find(e_sel)
+                    hoja_clientes.update_cell(cell.row, 1, e_nom)
+                    hoja_clientes.update_cell(cell.row, 2, e_cor)
+                    hoja_clientes.update_cell(cell.row, 3, e_dir)
+                    hoja_clientes.update_cell(cell.row, 4, e_tel)
+                    obtener_clientes.clear()
+                    st.rerun()
+
+    with t_c_del:
+        if clientes_db:
+            d_sel = st.selectbox("Seleccionar Cliente a Borrar", list(clientes_db.keys()), key="sb_del_cli")
+            if st.button("🚨 Eliminar Cliente Definitivamente", type="primary"):
+                cell = hoja_clientes.find(d_sel)
+                hoja_clientes.delete_rows(cell.row)
+                obtener_clientes.clear()
+                st.rerun()
+
     st.divider()
-    st.header("🛠️ Servicios")
-    s1, s2 = st.columns([2, 1])
-    with s1: st.dataframe(pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio"]), hide_index=True, width="stretch")
+    
+    st.header("🛠️ Gestión de Servicios")
+    s1, s2 = st.columns([1, 1])
+    with s1: 
+        st.dataframe(pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio ($)"]), hide_index=True, use_container_width=True)
+        
     with s2:
-        with st.expander("➕ Añadir"):
-            sn = st.text_input("Nuevo Servicio")
-            sp = st.number_input("Precio", min_value=0.0)
-            if st.button("Guardar"):
-                hoja_servicios.append_row([sn, sp]); obtener_servicios.clear(); st.rerun()
+        t_s_add, t_s_edit, t_s_del = st.tabs(["➕ Añadir", "✏️ Editar", "🗑️ Borrar"])
+        
+        with t_s_add:
+            with st.form("form_add_serv"):
+                sn = st.text_input("Nuevo Servicio")
+                sp = st.number_input("Precio ($)", min_value=0.0)
+                if st.form_submit_button("Guardar Servicio"):
+                    if sn:
+                        hoja_servicios.append_row([sn, sp])
+                        obtener_servicios.clear()
+                        st.rerun()
+                        
+        with t_s_edit:
+            if servicios_db:
+                es_sel = st.selectbox("Seleccionar Servicio a Editar", list(servicios_db.keys()), key="sb_edit_serv")
+                with st.form("form_edit_serv"):
+                    es_nom = st.text_input("Servicio", value=es_sel)
+                    es_pre = st.number_input("Precio ($)", min_value=0.0, value=float(servicios_db[es_sel]))
+                    if st.form_submit_button("Actualizar Servicio"):
+                        cell = hoja_servicios.find(es_sel)
+                        hoja_servicios.update_cell(cell.row, 1, es_nom)
+                        hoja_servicios.update_cell(cell.row, 2, es_pre)
+                        obtener_servicios.clear()
+                        st.rerun()
+                        
+        with t_s_del:
+            if servicios_db:
+                ds_sel = st.selectbox("Seleccionar Servicio a Borrar", list(servicios_db.keys()), key="sb_del_serv")
+                if st.button("🚨 Eliminar Servicio", type="primary", key="btn_del_serv"):
+                    cell = hoja_servicios.find(ds_sel)
+                    hoja_servicios.delete_rows(cell.row)
+                    obtener_servicios.clear()
+                    st.rerun()
