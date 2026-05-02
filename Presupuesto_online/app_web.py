@@ -17,7 +17,7 @@ st.set_page_config(page_title="Miranda Service ERP", page_icon="🌿", layout="c
 CORREO_PAPA = "MirandaServiceOficial@gmail.com"
 DIRECCION_PAPA_1 = "980 Dixie Line Rd"
 DIRECCION_PAPA_2 = "Newark, DE 19713"
-TELEFONO_PAPA = "(302) 584-2281"
+TELEFONO_PAPA = "(302) 602-9250"
 
 try:
     PASSWORD_APP_GMAIL = st.secrets["gmail_password"]
