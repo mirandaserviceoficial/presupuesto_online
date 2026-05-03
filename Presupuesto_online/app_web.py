@@ -174,7 +174,7 @@ with tab2:
             
             with col_t1:
                 st.write("### Payment Information")
-                zelle_info = st.text_input("Zelle/Phone", value="3026029250)"
+                zelle_info = st.text_input("Zelle/Phone", value="3026029250")
                 venmo_info = st.text_input("Venmo Username", value="@MirandaService")
                 cash_check = st.checkbox("Accept Cash/Check", value=True)
 
