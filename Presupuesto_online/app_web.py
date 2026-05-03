@@ -45,6 +45,14 @@ try:
     hoja_clientes = db.worksheet("Clientes")
     hoja_servicios = db.worksheet("Servicios")
     hoja_facturas = db.worksheet("Facturas")
+    
+    # Intentar abrir la hoja de trabajos, si no existe, crearla automáticamente
+    try:
+        hoja_trabajos = db.worksheet("Trabajos")
+    except gspread.exceptions.WorksheetNotFound:
+        hoja_trabajos = db.add_worksheet(title="Trabajos", rows="1000", cols="7")
+        hoja_trabajos.append_row(["ID", "Cliente", "Fecha", "Servicio", "Cantidad", "Precio", "Estado"])
+        
 except Exception as e:
     st.error(f"Error de conexión: {e}")
     st.stop()
@@ -82,176 +90,212 @@ def obtener_facturas_records():
         except Exception: time.sleep(2)
     return []
 
+@st.cache_data(ttl=300) # Se actualiza más rápido
+def obtener_trabajos():
+    for intento in range(3):
+        try: return hoja_trabajos.get_all_records()
+        except Exception: time.sleep(2)
+    return []
+
 clientes_db = obtener_clientes()
 servicios_db = obtener_servicios()
 
-# --- LÓGICA DE MEMORIA ---
-if "input_correo" not in st.session_state: st.session_state["input_correo"] = ""
-if "input_direccion" not in st.session_state: st.session_state["input_direccion"] = ""
-if "input_telefono" not in st.session_state: st.session_state["input_telefono"] = ""
-for i in range(5):
-    if f"precio_{i}" not in st.session_state: st.session_state[f"precio_{i}"] = 0.0
-    if f"cant_{i}" not in st.session_state: st.session_state[f"cant_{i}"] = 0
-
-def cb_cliente():
-    sel = st.session_state["combo_cliente"]
-    if sel != "(Nuevo Cliente)" and sel in clientes_db:
-        data = clientes_db[sel]
-        st.session_state["input_correo"] = data['correo']
-        st.session_state["input_direccion"] = data['direccion']
-        st.session_state["input_telefono"] = data['telefono']
-    else:
-        st.session_state["input_correo"] = ""; st.session_state["input_direccion"] = ""; st.session_state["input_telefono"] = ""
-
-def cb_precio(i):
-    ds = st.session_state[f"desc_{i}"]
-    if ds in servicios_db:
-        st.session_state[f"precio_{i}"] = servicios_db[ds]
-        if st.session_state[f"cant_{i}"] == 0: st.session_state[f"cant_{i}"] = 1
-
 # --- INTERFAZ PRINCIPAL ---
 st.title("🌿 MIRANDA SERVICE ERP")
-tab1, tab2, tab3 = st.tabs(["📝 Facturar", "📊 Historial y Finanzas", "🗂️ Directorio"])
+tab1, tab2, tab3, tab4 = st.tabs(["🗓️ Registro Semanal", "🧾 Facturar Mes", "📊 Finanzas", "🗂️ Directorio"])
 
-# --- PESTAÑA 1: GENERACIÓN DE FACTURAS ---
+# --- PESTAÑA 1: REGISTRO SEMANAL DE TRABAJOS ---
 with tab1:
-    st.subheader("Datos del Cliente")
-    st.selectbox("Seleccionar Cliente", ["(Nuevo Cliente)"] + list(clientes_db.keys()), key="combo_cliente", on_change=cb_cliente)
-    
-    if st.session_state["combo_cliente"] == "(Nuevo Cliente)":
-        nom_cli = st.text_input("Nombre del Cliente")
-    else:
-        nom_cli = st.session_state["combo_cliente"]
-    
-    col_c1, col_c2 = st.columns(2)
-    with col_c1: cor_cli = st.text_input("Email", key="input_correo")
-    with col_c2: tel_cli = st.text_input("Phone", key="input_telefono")
-    dir_cli = st.text_area("Service Address", key="input_direccion")
-
-    st.divider()
-    st.subheader("Detalles del Servicio")
-    rows = []
-    subtotal = 0.0
-    for i in range(5):
-        cs, cc, cp = st.columns([3, 1, 1])
-        with cs: d = st.selectbox(f"Service {i+1}", [""] + list(servicios_db.keys()), key=f"desc_{i}", on_change=cb_precio, args=(i,))
-        with cc: c = st.number_input("Qty", min_value=0, step=1, key=f"cant_{i}")
-        with cp: p = st.number_input("Price ($)", min_value=0.0, key=f"precio_{i}")
-        rows.append((d, c, p))
-        subtotal += (float(c) * p)
-
-    col_t1, col_t2 = st.columns([2,1])
-    with col_t2:
-        desc_val = st.number_input("Discount ($)", min_value=0.0)
-        total_due = subtotal - desc_val
-        st.subheader(f"Total Due: ${total_due:,.2f}")
-    
-    with col_t1:
-        st.write("### Payment Information")
-        zelle_info = st.text_input("Zelle Email/Phone", value=CORREO_PAPA)
-        venmo_info = st.text_input("Venmo Username", value="@MirandaService")
-        cash_check = st.checkbox("Accept Cash/Check", value=True)
-
-    if st.button("🚀 Emitir Factura", type="primary", use_container_width=True):
-        if not nom_cli or not dir_cli or total_due <= 0:
-            st.warning("Faltan datos obligatorios o el total es cero.")
+    st.header("Añadir Trabajo a la Cuenta del Cliente")
+    if clientes_db:
+        with st.form("form_registro_trabajo"):
+            c_reg = st.selectbox("Seleccionar Cliente", list(clientes_db.keys()))
+            f_reg = st.date_input("Fecha del Servicio", datetime.date.today())
+            
+            c1, c2, c3 = st.columns([3, 1, 1])
+            with c1: s_reg = st.selectbox("Servicio Realizado", list(servicios_db.keys()))
+            with c2: cant_reg = st.number_input("Cantidad", min_value=1, step=1)
+            
+            # Autocompletar precio basado en el servicio seleccionado
+            precio_sug = servicios_db.get(s_reg, 0.0) if s_reg else 0.0
+            with c3: p_reg = st.number_input("Precio Unitario ($)", value=float(precio_sug), min_value=0.0)
+            
+            if st.form_submit_button("💾 Guardar Trabajo (Pendiente)", type="primary"):
+                id_trabajo = str(int(time.time())) # ID único basado en la hora
+                hoja_trabajos.append_row([id_trabajo, c_reg, str(f_reg), s_reg, cant_reg, p_reg, "Pendiente"])
+                obtener_trabajos.clear()
+                st.success(f"Trabajo guardado exitosamente para {c_reg}.")
+                st.rerun()
+                
+        st.divider()
+        st.subheader("Trabajos Acumulados (Sin Facturar)")
+        trabajos_act = obtener_trabajos()
+        if trabajos_act:
+            df_t = pd.DataFrame(trabajos_act)
+            df_pendientes = df_t[df_t['Estado'] == 'Pendiente']
+            if not df_pendientes.empty:
+                # Calcular subtotal visual
+                df_pendientes['Subtotal'] = df_pendientes['Cantidad'] * df_pendientes['Precio']
+                st.dataframe(df_pendientes[['Cliente', 'Fecha', 'Servicio', 'Cantidad', 'Precio', 'Subtotal']], hide_index=True, use_container_width=True)
+            else:
+                st.info("Todos los trabajos han sido facturados.")
         else:
-            with st.spinner("Creando PDF..."):
-                if nom_cli not in clientes_db:
-                    hoja_clientes.append_row([nom_cli, cor_cli, dir_cli, tel_cli])
-                    obtener_clientes.clear()
-                
-                folio = f"FAC-{len(hoja_facturas.get_all_values()):04d}"
-                f_emision = datetime.date.today()
-                f_venc = f_emision + datetime.timedelta(days=5)
-                
-                # --- PDF GENERATION ---
-                pdf = FPDF()
-                pdf.add_page()
-                if os.path.exists(PLANTILLA_IMG):
-                    pdf.image(PLANTILLA_IMG, x=0, y=0, w=210, h=297)
-                
-                blue = (0, 102, 204)
-                pdf.set_font("Helvetica", 'B', 14); pdf.set_text_color(*blue)
-                pdf.text(120, 25, "MIRANDA SERVICE LLC")
-                pdf.set_font("Helvetica", '', 10); pdf.set_text_color(0,0,0)
-                pdf.text(120, 30, DIRECCION_PAPA_1); pdf.text(120, 35, DIRECCION_PAPA_2)
-                pdf.text(120, 40, f"Tel: {TELEFONO_PAPA}")
+            st.info("No hay trabajos registrados.")
+    else:
+        st.warning("Añade clientes en el Directorio primero.")
 
-                pdf.set_font("Helvetica", 'B', 11); pdf.set_text_color(*blue)
-                pdf.text(15, 60, "BILLED TO:")
-                pdf.text(120, 60, f"INVOICE #: {folio}")
-                pdf.set_font("Helvetica", 'B', 10); pdf.set_text_color(0,0,0)
-                pdf.text(15, 65, nom_cli)
-                pdf.set_font("Helvetica", '', 9)
-                pdf.set_xy(15, 67); pdf.multi_cell(80, 4, f"{dir_cli}\nTel: {tel_cli}")
-
-                pdf.set_font("Helvetica", '', 10)
-                pdf.text(120, 65, f"Issued: {f_emision.strftime('%m/%d/%Y')}")
-                pdf.set_text_color(200, 0, 0); pdf.text(120, 70, f"Due Date: {f_venc.strftime('%m/%d/%Y')}")
-                pdf.set_text_color(0, 0, 0)
-
-                pdf.set_fill_color(*blue); pdf.set_text_color(255,255,255)
-                pdf.set_xy(10, 90)
-                pdf.cell(95, 8, "Description", 1, 0, 'C', True)
-                pdf.cell(25, 8, "Qty", 1, 0, 'C', True)
-                pdf.cell(35, 8, "Unit Price", 1, 0, 'C', True)
-                pdf.cell(35, 8, "Amount", 1, 1, 'C', True)
-
-                pdf.set_text_color(0,0,0); pdf.set_font("Helvetica", '', 10)
-                for d, c, p in rows:
-                    if d and c > 0:
-                        total_row = float(c) * p
-                        pdf.set_x(10)
-                        pdf.cell(95, 7, f" {d}", 1)
-                        pdf.cell(25, 7, str(c), 1, 0, 'C')
-                        pdf.cell(35, 7, f"${p:,.2f}", 1, 0, 'C')
-                        pdf.cell(35, 7, f"${total_row:,.2f}", 1, 1, 'C')
-
-                ty = pdf.get_y() + 8
-                pdf.set_font("Helvetica", 'B', 10)
-                pdf.text(140, ty, "Subtotal:")
-                pdf.text(175, ty, f"${subtotal:,.2f}")
-                pdf.text(140, ty+7, "Discount:")
-                pdf.set_text_color(200,0,0); pdf.text(175, ty+7, f"-${desc_val:,.2f}")
-                
-                pdf.set_text_color(*blue); pdf.set_font("Helvetica", 'B', 13)
-                pdf.text(140, ty+16, "TOTAL:")
-                pdf.text(175, ty+16, f"${total_due:,.2f}")
-
-                pdf.set_font("Helvetica", 'B', 11); pdf.text(15, ty, "PAYMENT OPTIONS:")
-                pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", '', 9)
-                pm_y = ty + 6
-                if zelle_info: pdf.text(15, pm_y, f"Zelle: {zelle_info}"); pm_y += 5
-                if venmo_info: pdf.text(15, pm_y, f"Venmo: {venmo_info}"); pm_y += 5
-                if cash_check: pdf.text(15, pm_y, "Check: Payable to Miranda Service / Cash Accepted")
-
-                pdf.set_text_color(100, 100, 100); pdf.set_font("Helvetica", '', 8)
-                footer_text = "Thank you for choosing Miranda Service!\nFull payment is due within 5 days. Late fee of 5% may apply."
-                pdf.set_xy(15, 255); pdf.multi_cell(180, 4, footer_text, align='C')
-
-                fname = f"{folio}_{nom_cli.replace(' ','_')}.pdf"
-                pdf.output(fname)
-                hoja_facturas.append_row([folio, nom_cli, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
-                obtener_facturas_records.clear()
-                
-                if cor_cli and PASSWORD_APP_GMAIL != "yanwkulxewxpnccg":
-                    try:
-                        msg = EmailMessage()
-                        msg['Subject'] = f'Invoice {folio} - Miranda Service LLC'
-                        msg['From'] = CORREO_PAPA; msg['To'] = cor_cli; msg['Cc'] = CORREO_PAPA
-                        msg.set_content(f"Hi {nom_cli},\n\nAttached is invoice {folio}.\nTotal Due: ${total_due:,.2f}\n\nThank you!")
-                        with open(fname, 'rb') as f: msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=fname)
-                        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
-                            s.login(CORREO_PAPA, PASSWORD_APP_GMAIL); s.send_message(msg)
-                    except Exception as e: st.error(f"Error correo: {e}")
-
-                st.success(f"Factura {folio} generada.")
-                with open(fname, "rb") as f: st.download_button("📥 Descargar PDF", f, file_name=fname, type="primary")
-                os.remove(fname)
-
-# --- PESTAÑA 2: HISTORIAL Y FINANZAS INTERACTIVAS ---
+# --- PESTAÑA 2: GENERACIÓN DE FACTURA MENSUAL ---
 with tab2:
+    st.header("Generar Factura Consolidada")
+    trabajos_para_facturar = obtener_trabajos()
+    
+    if trabajos_para_facturar:
+        df_tf = pd.DataFrame(trabajos_para_facturar)
+        df_pendientes_f = df_tf[df_tf['Estado'] == 'Pendiente']
+        
+        if not df_pendientes_f.empty:
+            clientes_pendientes = df_pendientes_f['Cliente'].unique().tolist()
+            c_fac = st.selectbox("Seleccionar Cliente a Facturar", clientes_pendientes)
+            
+            # Filtrar solo los trabajos de este cliente
+            trabajos_cliente = df_pendientes_f[df_pendientes_f['Cliente'] == c_fac]
+            trabajos_cliente['TotalFila'] = trabajos_cliente['Cantidad'] * trabajos_cliente['Precio']
+            
+            st.write(f"### Trabajos acumulados de {c_fac}")
+            st.dataframe(trabajos_cliente[['Fecha', 'Servicio', 'Cantidad', 'Precio', 'TotalFila']], hide_index=True, use_container_width=True)
+            
+            subtotal_mes = trabajos_cliente['TotalFila'].sum()
+            
+            col_t1, col_t2 = st.columns([2,1])
+            with col_t2:
+                desc_val = st.number_input("Discount ($)", min_value=0.0, key="desc_mes")
+                total_due = subtotal_mes - desc_val
+                st.subheader(f"Total Due: ${total_due:,.2f}")
+            
+            with col_t1:
+                st.write("### Payment Information")
+                zelle_info = st.text_input("Zelle Email/Phone", value=CORREO_PAPA)
+                venmo_info = st.text_input("Venmo Username", value="@MirandaService")
+                cash_check = st.checkbox("Accept Cash/Check", value=True)
+
+            if st.button("🚀 Emitir Factura Mensual", type="primary", use_container_width=True):
+                with st.spinner("Compilando trabajos y creando PDF..."):
+                    folio = f"FAC-{len(hoja_facturas.get_all_values()):04d}"
+                    f_emision = datetime.date.today()
+                    f_venc = f_emision + datetime.timedelta(days=5)
+                    
+                    datos_cli = clientes_db.get(c_fac, {})
+                    cor_cli = datos_cli.get('correo', '')
+                    dir_cli = datos_cli.get('direccion', '')
+                    tel_cli = datos_cli.get('telefono', '')
+                    
+                    # --- PDF GENERATION ---
+                    pdf = FPDF()
+                    pdf.add_page()
+                    if os.path.exists(PLANTILLA_IMG):
+                        pdf.image(PLANTILLA_IMG, x=0, y=0, w=210, h=297)
+                    
+                    blue = (0, 102, 204)
+                    pdf.set_font("Helvetica", 'B', 14); pdf.set_text_color(*blue)
+                    pdf.text(120, 25, "MIRANDA SERVICE LLC")
+                    pdf.set_font("Helvetica", '', 10); pdf.set_text_color(0,0,0)
+                    pdf.text(120, 30, DIRECCION_PAPA_1); pdf.text(120, 35, DIRECCION_PAPA_2)
+                    pdf.text(120, 40, f"Tel: {TELEFONO_PAPA}")
+
+                    pdf.set_font("Helvetica", 'B', 11); pdf.set_text_color(*blue)
+                    pdf.text(15, 60, "BILLED TO:")
+                    pdf.text(120, 60, f"INVOICE #: {folio}")
+                    pdf.set_font("Helvetica", 'B', 10); pdf.set_text_color(0,0,0)
+                    pdf.text(15, 65, c_fac)
+                    pdf.set_font("Helvetica", '', 9)
+                    pdf.set_xy(15, 67); pdf.multi_cell(80, 4, f"{dir_cli}\nTel: {tel_cli}")
+
+                    pdf.set_font("Helvetica", '', 10)
+                    pdf.text(120, 65, f"Issued: {f_emision.strftime('%m/%d/%Y')}")
+                    pdf.set_text_color(200, 0, 0); pdf.text(120, 70, f"Due Date: {f_venc.strftime('%m/%d/%Y')}")
+                    pdf.set_text_color(0, 0, 0)
+
+                    pdf.set_fill_color(*blue); pdf.set_text_color(255,255,255)
+                    pdf.set_xy(10, 90)
+                    pdf.cell(30, 8, "Date", 1, 0, 'C', True)
+                    pdf.cell(75, 8, "Description", 1, 0, 'C', True)
+                    pdf.cell(15, 8, "Qty", 1, 0, 'C', True)
+                    pdf.cell(35, 8, "Unit Price", 1, 0, 'C', True)
+                    pdf.cell(35, 8, "Amount", 1, 1, 'C', True)
+
+                    pdf.set_text_color(0,0,0); pdf.set_font("Helvetica", '', 10)
+                    
+                    # Rellenar tabla con los trabajos acumulados
+                    for index, row in trabajos_cliente.iterrows():
+                        pdf.set_x(10)
+                        pdf.cell(30, 7, str(row['Fecha']), 1, 0, 'C')
+                        pdf.cell(75, 7, f" {row['Servicio']}", 1)
+                        pdf.cell(15, 7, str(row['Cantidad']), 1, 0, 'C')
+                        pdf.cell(35, 7, f"${row['Precio']:,.2f}", 1, 0, 'C')
+                        pdf.cell(35, 7, f"${row['TotalFila']:,.2f}", 1, 1, 'C')
+
+                    ty = pdf.get_y() + 8
+                    pdf.set_font("Helvetica", 'B', 10)
+                    pdf.text(140, ty, "Subtotal:")
+                    pdf.text(175, ty, f"${subtotal_mes:,.2f}")
+                    pdf.text(140, ty+7, "Discount:")
+                    pdf.set_text_color(200,0,0); pdf.text(175, ty+7, f"-${desc_val:,.2f}")
+                    
+                    pdf.set_text_color(*blue); pdf.set_font("Helvetica", 'B', 13)
+                    pdf.text(140, ty+16, "TOTAL:")
+                    pdf.text(175, ty+16, f"${total_due:,.2f}")
+
+                    pdf.set_font("Helvetica", 'B', 11); pdf.text(15, ty, "PAYMENT OPTIONS:")
+                    pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", '', 9)
+                    pm_y = ty + 6
+                    if zelle_info: pdf.text(15, pm_y, f"Zelle: {zelle_info}"); pm_y += 5
+                    if venmo_info: pdf.text(15, pm_y, f"Venmo: {venmo_info}"); pm_y += 5
+                    if cash_check: pdf.text(15, pm_y, "Check: Payable to Miranda Service / Cash Accepted")
+
+                    pdf.set_text_color(100, 100, 100); pdf.set_font("Helvetica", '', 8)
+                    footer_text = "Thank you for choosing Miranda Service!\nFull payment is due within 5 days. Late fee of 5% may apply."
+                    pdf.set_xy(15, 255); pdf.multi_cell(180, 4, footer_text, align='C')
+
+                    # Guardar archivo PDF
+                    fname = f"{folio}_{c_fac.replace(' ','_')}.pdf"
+                    pdf.output(fname)
+                    
+                    # 1. Actualizar Facturas
+                    hoja_facturas.append_row([folio, c_fac, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
+                    
+                    # 2. Actualizar estado de los Trabajos de 'Pendiente' a 'Facturado'
+                    todas_filas_trabajos = hoja_trabajos.get_all_values()
+                    for i, fila in enumerate(todas_filas_trabajos):
+                        # Fila[1] es Cliente, Fila[6] es Estado
+                        if i > 0 and fila[1] == c_fac and fila[6] == "Pendiente":
+                            hoja_trabajos.update_cell(i+1, 7, "Facturado")
+                            
+                    obtener_facturas_records.clear()
+                    obtener_trabajos.clear()
+                    
+                    # Enviar Correo
+                    if cor_cli and PASSWORD_APP_GMAIL != "yanwkulxewxpnccg":
+                        try:
+                            msg = EmailMessage()
+                            msg['Subject'] = f'Invoice {folio} - Miranda Service LLC'
+                            msg['From'] = CORREO_PAPA; msg['To'] = cor_cli; msg['Cc'] = CORREO_PAPA
+                            msg.set_content(f"Hi {c_fac},\n\nAttached is invoice {folio}.\nTotal Due: ${total_due:,.2f}\n\nThank you!")
+                            with open(fname, 'rb') as f: msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=fname)
+                            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
+                                s.login(CORREO_PAPA, PASSWORD_APP_GMAIL); s.send_message(msg)
+                        except Exception as e: st.error(f"Error correo: {e}")
+
+                    st.success(f"Factura {folio} generada. Trabajos marcados como completados.")
+                    with open(fname, "rb") as f: st.download_button("📥 Descargar PDF", f, file_name=fname, type="primary")
+                    os.remove(fname)
+                    # st.rerun() no lo ponemos directo para que el usuario pueda descargar el PDF, pero al interactuar se refrescará.
+        else:
+            st.success("🎉 No hay clientes con trabajos pendientes de facturar.")
+    else:
+        st.info("Registra trabajos en la primera pestaña para poder facturarlos.")
+
+# --- PESTAÑA 3: HISTORIAL Y FINANZAS INTERACTIVAS ---
+with tab3:
     st.subheader("Análisis Financiero")
     data_f = obtener_facturas_records()
     if data_f:
@@ -304,19 +348,19 @@ with tab2:
         with c_r:
             if pagadas:
                 f_r = st.selectbox("Quitar Pagado:", pagadas, key="r_f")
-                if st.button("⏪ Revertir", use_container_width=True):
+                if st.button("⏪ Revertir a Pendiente", use_container_width=True):
                     hoja_facturas.update_cell(hoja_facturas.find(f_r).row, 6, "Pendiente")
                     obtener_facturas_records.clear(); st.rerun()
         with c_b:
             if todas:
-                f_b = st.selectbox("Eliminar:", todas, key="b_f")
+                f_b = st.selectbox("Eliminar Factura:", todas, key="b_f")
                 if st.button("🗑️ Borrar Factura", type="primary", use_container_width=True):
                     hoja_facturas.delete_rows(hoja_facturas.find(f_b).row)
                     obtener_facturas_records.clear(); st.rerun()
     else: st.info("No hay facturas registradas.")
 
-# --- PESTAÑA 3: DIRECTORIO (CRUD CLIENTES Y SERVICIOS) ---
-with tab3:
+# --- PESTAÑA 4: DIRECTORIO (CRUD CLIENTES Y SERVICIOS) ---
+with tab4:
     st.header("👥 Gestión de Clientes")
     df_cl = pd.DataFrame([{'Nombre': k, 'Correo': v['correo'], 'Tel': v['telefono'], 'Dirección': v['direccion']} for k, v in clientes_db.items()])
     st.dataframe(df_cl, hide_index=True, use_container_width=True)
