@@ -132,10 +132,50 @@ with tab1:
         trabajos_act = obtener_trabajos()
         if trabajos_act:
             df_t = pd.DataFrame(trabajos_act)
-            df_pendientes = df_t[df_t['Estado'] == 'Pendiente']
+            df_pendientes = df_t[df_t['Estado'] == 'Pendiente'].copy()
             if not df_pendientes.empty:
                 df_pendientes['Subtotal'] = df_pendientes['Cantidad'] * df_pendientes['Precio']
                 st.dataframe(df_pendientes[['Cliente', 'Fecha', 'Servicio', 'Cantidad', 'Precio', 'Subtotal']], hide_index=True, use_container_width=True)
+                
+                # --- NUEVA SECCIÓN: EDICIÓN DE TRABAJOS ---
+                st.write("### ✏️ Editar / Borrar Trabajos")
+                df_pendientes['ID'] = df_pendientes['ID'].astype(str)
+                # Formatear el menú para que sea fácil de identificar
+                opciones_tr = df_pendientes.apply(lambda x: f"{x['ID']} | {x['Cliente']} - {x['Fecha']} - {x['Servicio']}", axis=1).tolist()
+                
+                tr_sel = st.selectbox("Selecciona un trabajo para modificar:", opciones_tr)
+                
+                if tr_sel:
+                    id_target = tr_sel.split(" | ")[0].strip()
+                    datos_tr = df_pendientes[df_pendientes['ID'] == id_target].iloc[0]
+                    
+                    col_e1, col_e2 = st.columns([2, 1])
+                    with col_e1:
+                        with st.form("form_edit_tr"):
+                            st.write("**Modificar datos:**")
+                            n_f = st.date_input("Fecha", pd.to_datetime(datos_tr['Fecha']).date())
+                            n_s = st.text_input("Servicio", value=datos_tr['Servicio'])
+                            n_c = st.number_input("Cantidad", min_value=1, value=int(datos_tr['Cantidad']))
+                            n_p = st.number_input("Precio ($)", min_value=0.0, value=float(datos_tr['Precio']))
+                            
+                            if st.form_submit_button("Actualizar Trabajo"):
+                                cell = hoja_trabajos.find(id_target)
+                                hoja_trabajos.update_cell(cell.row, 3, str(n_f))
+                                hoja_trabajos.update_cell(cell.row, 4, n_s)
+                                hoja_trabajos.update_cell(cell.row, 5, n_c)
+                                hoja_trabajos.update_cell(cell.row, 6, n_p)
+                                obtener_trabajos.clear()
+                                st.rerun()
+                                
+                    with col_e2:
+                        st.write("**Eliminar registro:**")
+                        if st.button("🗑️ Borrar este trabajo", type="primary", use_container_width=True):
+                            cell = hoja_trabajos.find(id_target)
+                            hoja_trabajos.delete_rows(cell.row)
+                            obtener_trabajos.clear()
+                            st.rerun()
+                # ------------------------------------------
+
             else:
                 st.info("Todos los trabajos han sido facturados.")
         else:
@@ -266,7 +306,7 @@ with tab2:
                     fname = f"{folio}_{c_fac.replace(' ','_')}.pdf"
                     pdf.output(fname)
                     
-                    # Registrar en Google Sheets (Solo 7 columnas, sin Drive)
+                    # Registrar en Google Sheets (Solo 7 columnas)
                     hoja_facturas.append_row([folio, c_fac, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
                     
                     # Actualizar estado de los Trabajos
