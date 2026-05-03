@@ -9,6 +9,8 @@ from email.message import EmailMessage
 import json
 import pandas as pd
 import time
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Miranda Service ERP", page_icon="🌿", layout="wide")
@@ -19,10 +21,13 @@ DIRECCION_PAPA_1 = "980 Dixie Line Rd"
 DIRECCION_PAPA_2 = "Newark, DE 19713"
 TELEFONO_PAPA = "(302) 602-9250"
 
+# 👇 PEGA AQUÍ EL ID DE TU CARPETA DE GOOGLE DRIVE 👇
+CARPETA_DRIVE_ID = "14gGXLuQNUSlS4JCCLlmLfeCcqgvoI1cI"
+
 try:
     PASSWORD_APP_GMAIL = st.secrets["gmail_password"]
 except:
-    PASSWORD_APP_GMAIL = "yanwkulxewxpnccg" # Clave de 16 dígitos
+    PASSWORD_APP_GMAIL = "yanwkulxewxpnccg" 
 
 DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
 PLANTILLA_IMG = os.path.join(DIRECTORIO_ACTUAL, "plantilla_nueva.png")
@@ -36,17 +41,22 @@ def conectar_servicios():
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     else:
         creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales.json", scope)
+    
+    # Conexión a Sheets
     client = gspread.authorize(creds)
     sheet = client.open("Miranda_DB")
-    return sheet
+    
+    # Conexión a Drive
+    drive_service = build('drive', 'v3', credentials=creds)
+    
+    return sheet, drive_service
 
 try:
-    db = conectar_servicios()
+    db, drive_service = conectar_servicios()
     hoja_clientes = db.worksheet("Clientes")
     hoja_servicios = db.worksheet("Servicios")
     hoja_facturas = db.worksheet("Facturas")
     
-    # Intentar abrir la hoja de trabajos, si no existe, crearla automáticamente
     try:
         hoja_trabajos = db.worksheet("Trabajos")
     except gspread.exceptions.WorksheetNotFound:
@@ -90,7 +100,7 @@ def obtener_facturas_records():
         except Exception: time.sleep(2)
     return []
 
-@st.cache_data(ttl=300) # Se actualiza más rápido
+@st.cache_data(ttl=300) 
 def obtener_trabajos():
     for intento in range(3):
         try: return hoja_trabajos.get_all_records()
@@ -116,12 +126,11 @@ with tab1:
             with c1: s_reg = st.selectbox("Servicio Realizado", list(servicios_db.keys()))
             with c2: cant_reg = st.number_input("Cantidad", min_value=1, step=1)
             
-            # Autocompletar precio basado en el servicio seleccionado
             precio_sug = servicios_db.get(s_reg, 0.0) if s_reg else 0.0
             with c3: p_reg = st.number_input("Precio Unitario ($)", value=float(precio_sug), min_value=0.0)
             
             if st.form_submit_button("💾 Guardar Trabajo (Pendiente)", type="primary"):
-                id_trabajo = str(int(time.time())) # ID único basado en la hora
+                id_trabajo = str(int(time.time())) 
                 hoja_trabajos.append_row([id_trabajo, c_reg, str(f_reg), s_reg, cant_reg, p_reg, "Pendiente"])
                 obtener_trabajos.clear()
                 st.success(f"Trabajo guardado exitosamente para {c_reg}.")
@@ -134,7 +143,6 @@ with tab1:
             df_t = pd.DataFrame(trabajos_act)
             df_pendientes = df_t[df_t['Estado'] == 'Pendiente']
             if not df_pendientes.empty:
-                # Calcular subtotal visual
                 df_pendientes['Subtotal'] = df_pendientes['Cantidad'] * df_pendientes['Precio']
                 st.dataframe(df_pendientes[['Cliente', 'Fecha', 'Servicio', 'Cantidad', 'Precio', 'Subtotal']], hide_index=True, use_container_width=True)
             else:
@@ -157,7 +165,6 @@ with tab2:
             clientes_pendientes = df_pendientes_f['Cliente'].unique().tolist()
             c_fac = st.selectbox("Seleccionar Cliente a Facturar", clientes_pendientes)
             
-            # Filtrar solo los trabajos de este cliente
             trabajos_cliente = df_pendientes_f[df_pendientes_f['Cliente'] == c_fac]
             trabajos_cliente['TotalFila'] = trabajos_cliente['Cantidad'] * trabajos_cliente['Precio']
             
@@ -174,7 +181,7 @@ with tab2:
             
             with col_t1:
                 st.write("### Payment Information")
-                zelle_info = st.text_input("Zelle/Phone", value="3026029250")
+                zelle_info = st.text_input("Zelle Email/Phone", value=CORREO_PAPA)
                 venmo_info = st.text_input("Venmo Username", value="@MirandaService")
                 cash_check = st.checkbox("Accept Cash/Check", value=True)
 
@@ -225,7 +232,6 @@ with tab2:
 
                     pdf.set_text_color(0,0,0); pdf.set_font("Helvetica", '', 10)
                     
-                    # Rellenar tabla con los trabajos acumulados
                     for index, row in trabajos_cliente.iterrows():
                         pdf.set_x(10)
                         pdf.cell(30, 7, str(row['Fecha']), 1, 0, 'C')
@@ -256,17 +262,33 @@ with tab2:
                     footer_text = "Thank you for choosing Miranda Service!\nFull payment is due within 5 days. Late fee of 5% may apply."
                     pdf.set_xy(15, 255); pdf.multi_cell(180, 4, footer_text, align='C')
 
-                    # Guardar archivo PDF
                     fname = f"{folio}_{c_fac.replace(' ','_')}.pdf"
                     pdf.output(fname)
                     
-                    # 1. Actualizar Facturas
-                    hoja_facturas.append_row([folio, c_fac, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
+                    # --- SUBIR A GOOGLE DRIVE ---
+                    link_drive = ""
+                    try:
+                        file_metadata = {'name': fname, 'parents': [CARPETA_DRIVE_ID]}
+                        media = MediaFileUpload(fname, mimetype='application/pdf')
+                        archivo_drive = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+                        
+                        # Dar permiso de lectura para que puedas verlo al darle clic
+                        drive_service.permissions().create(
+                            fileId=archivo_drive.get('id'),
+                            body={'type': 'anyone', 'role': 'reader'}
+                        ).execute()
+                        
+                        link_drive = archivo_drive.get('webViewLink')
+                    except Exception as e:
+                        st.warning(f"No se pudo subir a Google Drive: {e}")
+                        link_drive = "Error"
                     
-                    # 2. Actualizar estado de los Trabajos de 'Pendiente' a 'Facturado'
+                    # Guardar en Facturas con el link de Drive
+                    hoja_facturas.append_row([folio, c_fac, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy", link_drive])
+                    
+                    # Actualizar estado de los Trabajos
                     todas_filas_trabajos = hoja_trabajos.get_all_values()
                     for i, fila in enumerate(todas_filas_trabajos):
-                        # Fila[1] es Cliente, Fila[6] es Estado
                         if i > 0 and fila[1] == c_fac and fila[6] == "Pendiente":
                             hoja_trabajos.update_cell(i+1, 7, "Facturado")
                             
@@ -286,9 +308,8 @@ with tab2:
                         except Exception as e: st.error(f"Error correo: {e}")
 
                     st.success(f"Factura {folio} generada. Trabajos marcados como completados.")
-                    with open(fname, "rb") as f: st.download_button("📥 Descargar PDF", f, file_name=fname, type="primary")
+                    with open(fname, "rb") as f: st.download_button("📥 Descargar PDF Local", f, file_name=fname, type="primary")
                     os.remove(fname)
-                    # st.rerun() no lo ponemos directo para que el usuario pueda descargar el PDF, pero al interactuar se refrescará.
         else:
             st.success("🎉 No hay clientes con trabajos pendientes de facturar.")
     else:
@@ -301,7 +322,6 @@ with tab3:
     if data_f:
         df_f = pd.DataFrame(data_f)
         
-        # --- SECCIÓN DE MÉTRICAS MENSUALES ---
         st.write("### 📈 Resumen por Mes")
         try:
             col_fecha = df_f.columns[2] 
@@ -330,7 +350,14 @@ with tab3:
 
         st.divider()
         st.write("### 🗂️ Registro General")
-        st.dataframe(df_f, hide_index=True, use_container_width=True)
+        
+        # Configurar la tabla para que el link de Drive sea clicable
+        column_config = {}
+        if df_f.shape[1] >= 8: # Asumiendo que el Link de Drive está en la 8va columna
+            nombre_col_link = df_f.columns[7]
+            column_config[nombre_col_link] = st.column_config.LinkColumn("📄 Ver PDF en Drive")
+            
+        st.dataframe(df_f, hide_index=True, use_container_width=True, column_config=column_config)
         
         st.divider()
         st.write("### 🛠️ Acciones sobre Facturas")
