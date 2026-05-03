@@ -109,23 +109,29 @@ tab1, tab2, tab3, tab4 = st.tabs(["🗓️ Registro Semanal", "🧾 Facturar Mes
 with tab1:
     st.header("Añadir Trabajo a la Cuenta del Cliente")
     if clientes_db:
-        with st.form("form_registro_trabajo"):
-            c_reg = st.selectbox("Seleccionar Cliente", list(clientes_db.keys()))
-            f_reg = st.date_input("Fecha del Servicio", datetime.date.today())
-            
-            c1, c2, c3 = st.columns([3, 1, 1])
-            with c1: s_reg = st.selectbox("Servicio Realizado", list(servicios_db.keys()))
-            with c2: cant_reg = st.number_input("Cantidad", min_value=1, step=1)
-            
-            precio_sug = servicios_db.get(s_reg, 0.0) if s_reg else 0.0
-            with c3: p_reg = st.number_input("Precio Unitario ($)", value=float(precio_sug), min_value=0.0)
-            
-            if st.form_submit_button("💾 Guardar Trabajo (Pendiente)", type="primary"):
-                id_trabajo = str(int(time.time())) 
-                hoja_trabajos.append_row([id_trabajo, c_reg, str(f_reg), s_reg, cant_reg, p_reg, "Pendiente"])
-                obtener_trabajos.clear()
-                st.success(f"Trabajo guardado exitosamente para {c_reg}.")
-                st.rerun()
+        # SACAMOS ESTO DEL FORMULARIO PARA QUE ACTUALICE EN VIVO
+        c_reg = st.selectbox("Seleccionar Cliente", list(clientes_db.keys()), key="select_cli_reg")
+        f_reg = st.date_input("Fecha del Servicio", datetime.date.today(), key="date_reg")
+        
+        c1, c2, c3 = st.columns([3, 1, 1])
+        with c1: 
+            s_reg = st.selectbox("Servicio Realizado", list(servicios_db.keys()), key="select_serv_reg")
+        with c2: 
+            cant_reg = st.number_input("Cantidad", min_value=1, step=1, key="num_cant_reg")
+        
+        # El precio sugerido se calcula al instante porque Streamlit se recarga al cambiar el 'selectbox'
+        precio_sug = servicios_db.get(s_reg, 0.0) if s_reg else 0.0
+        with c3: 
+            p_reg = st.number_input("Precio Unitario ($)", value=float(precio_sug), min_value=0.0, key="num_precio_reg")
+        
+        # Un botón normal en vez de un form_submit_button
+        if st.button("💾 Guardar Trabajo (Pendiente)", type="primary", use_container_width=True):
+            id_trabajo = str(int(time.time())) 
+            hoja_trabajos.append_row([id_trabajo, c_reg, str(f_reg), s_reg, cant_reg, p_reg, "Pendiente"])
+            obtener_trabajos.clear()
+            st.success(f"Trabajo guardado exitosamente para {c_reg}.")
+            time.sleep(1) # Pequeña pausa para que el usuario lea el éxito
+            st.rerun()
                 
         st.divider()
         st.subheader("Trabajos Acumulados (Sin Facturar)")
@@ -140,7 +146,6 @@ with tab1:
                 # --- NUEVA SECCIÓN: EDICIÓN DE TRABAJOS ---
                 st.write("### ✏️ Editar / Borrar Trabajos")
                 df_pendientes['ID'] = df_pendientes['ID'].astype(str)
-                # Formatear el menú para que sea fácil de identificar
                 opciones_tr = df_pendientes.apply(lambda x: f"{x['ID']} | {x['Cliente']} - {x['Fecha']} - {x['Servicio']}", axis=1).tolist()
                 
                 tr_sel = st.selectbox("Selecciona un trabajo para modificar:", opciones_tr)
