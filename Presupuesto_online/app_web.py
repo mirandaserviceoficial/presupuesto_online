@@ -257,18 +257,75 @@ with tab1:
                 with open(fname, "rb") as f: st.download_button("📥 Descargar PDF", f, file_name=fname, type="primary", width="stretch")
                 os.remove(fname)
 
-# --- Pestañas 2 y 3 (Gestión Actualizada) ---
+# --- Pestañas 2 y 3 (Gestión Actualizada con Finanzas) ---
 with tab2:
-    st.subheader("Historial de Facturas")
+    st.subheader("Historial y Finanzas")
     data = obtener_facturas_records()
     if data:
         df = pd.DataFrame(data)
+        
+        # --- NUEVA SECCIÓN: FINANZAS MENSUALES ---
+        st.write("### 📈 Resumen Mensual")
+        try:
+            # Asumimos que la Fecha de Emisión es la col 2 y el Total la col 4 
+            # (índices 2 y 4 basados en el orden de append_row)
+            col_fecha = df.columns[2] 
+            col_total = df.columns[4]
+            
+            df_finanzas = df.copy()
+            
+            # Limpiar la columna de Total (quitar '$' y ',') para sumar
+            df_finanzas['Valor_Num'] = df_finanzas[col_total].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False)
+            df_finanzas['Valor_Num'] = pd.to_numeric(df_finanzas['Valor_Num'], errors='coerce').fillna(0)
+            
+            # Extraer Mes y Año de la fecha
+            df_finanzas['Mes'] = pd.to_datetime(df_finanzas[col_fecha], errors='coerce').dt.to_period('M')
+            
+            # Agrupar por Mes y por Estado
+            resumen = df_finanzas.groupby(['Mes', 'Estado'])['Valor_Num'].sum().unstack(fill_value=0)
+            
+            # Asegurar que las columnas existan aunque no haya facturas de un tipo
+            if 'Pagado' not in resumen.columns: resumen['Pagado'] = 0.0
+            if 'Pendiente' not in resumen.columns: resumen['Pendiente'] = 0.0
+            
+            resumen['Total Generado'] = resumen['Pagado'] + resumen['Pendiente']
+            
+            # Obtener métricas del mes actual
+            mes_actual = pd.Timestamp.today().to_period('M')
+            
+            if mes_actual in resumen.index:
+                pagado_mes = resumen.loc[mes_actual, 'Pagado']
+                pdte_mes = resumen.loc[mes_actual, 'Pendiente']
+                total_mes = resumen.loc[mes_actual, 'Total Generado']
+            else:
+                pagado_mes = pdte_mes = total_mes = 0.0
+                
+            # Mostrar tarjetas visuales
+            m1, m2, m3 = st.columns(3)
+            m1.metric(label=f"💰 Ingresos ({mes_actual})", value=f"${pagado_mes:,.2f}", help="Facturas cobradas este mes")
+            m2.metric(label=f"⏳ Por Cobrar ({mes_actual})", value=f"${pdte_mes:,.2f}", help="Facturas pendientes este mes")
+            m3.metric(label=f"📊 Generado Total", value=f"${total_mes:,.2f}", help="Pagado + Pendiente")
+            
+            with st.expander("📅 Ver desglose de todos los meses"):
+                res_display = resumen.copy()
+                res_display.index = res_display.index.astype(str) # Convertir a texto para la tabla
+                for c in res_display.columns:
+                    res_display[c] = res_display[c].apply(lambda x: f"${x:,.2f}")
+                st.dataframe(res_display, use_container_width=True)
+                
+        except Exception as e:
+            st.warning("No hay datos suficientes para graficar las métricas aún.")
+            
+        st.divider()
+        
+        # --- HISTORIAL Y EDICIÓN DE ESTADOS ---
+        st.write("### 🗂️ Registro de Facturas")
         if 'Ruta_PDF' in df.columns: 
             df = df.drop(columns=['Ruta_PDF'])
         st.dataframe(df, hide_index=True, use_container_width=True)
         
         st.divider()
-        st.write("### Gestión de Facturas")
+        st.write("### Acciones Rápidas")
         c_pago, c_rev, c_borrar = st.columns(3)
         
         pendientes = df[df["Estado"] == "Pendiente"]["Folio"].tolist()
@@ -303,94 +360,3 @@ with tab2:
                     st.rerun()
     else: 
         st.info("Sin registros de facturas.")
-
-with tab3:
-    st.header("👥 Gestión de Clientes")
-    # Mostrar tabla de clientes más completa
-    df_c = pd.DataFrame([{'Nombre': k, 'Correo': v['correo'], 'Teléfono': v['telefono'], 'Dirección': v['direccion']} for k, v in clientes_db.items()])
-    st.dataframe(df_c, hide_index=True, use_container_width=True)
-    
-    t_c_add, t_c_edit, t_c_del = st.tabs(["➕ Añadir", "✏️ Editar", "🗑️ Borrar"])
-    
-    with t_c_add:
-        with st.form("form_add_cli"):
-            n_nom = st.text_input("Nombre del Cliente")
-            n_cor = st.text_input("Correo")
-            n_tel = st.text_input("Teléfono")
-            n_dir = st.text_area("Dirección")
-            if st.form_submit_button("Guardar Nuevo Cliente"):
-                if n_nom:
-                    hoja_clientes.append_row([n_nom, n_cor, n_dir, n_tel])
-                    obtener_clientes.clear()
-                    st.rerun()
-                else:
-                    st.warning("El nombre es obligatorio.")
-                    
-    with t_c_edit:
-        if clientes_db:
-            e_sel = st.selectbox("Seleccionar Cliente a Editar", list(clientes_db.keys()), key="sb_edit_cli")
-            datos_actuales = clientes_db[e_sel]
-            with st.form("form_edit_cli"):
-                e_nom = st.text_input("Nombre", value=e_sel)
-                e_cor = st.text_input("Correo", value=datos_actuales['correo'])
-                e_tel = st.text_input("Teléfono", value=datos_actuales['telefono'])
-                e_dir = st.text_area("Dirección", value=datos_actuales['direccion'])
-                if st.form_submit_button("Actualizar Cliente"):
-                    cell = hoja_clientes.find(e_sel)
-                    hoja_clientes.update_cell(cell.row, 1, e_nom)
-                    hoja_clientes.update_cell(cell.row, 2, e_cor)
-                    hoja_clientes.update_cell(cell.row, 3, e_dir)
-                    hoja_clientes.update_cell(cell.row, 4, e_tel)
-                    obtener_clientes.clear()
-                    st.rerun()
-
-    with t_c_del:
-        if clientes_db:
-            d_sel = st.selectbox("Seleccionar Cliente a Borrar", list(clientes_db.keys()), key="sb_del_cli")
-            if st.button("🚨 Eliminar Cliente Definitivamente", type="primary"):
-                cell = hoja_clientes.find(d_sel)
-                hoja_clientes.delete_rows(cell.row)
-                obtener_clientes.clear()
-                st.rerun()
-
-    st.divider()
-    
-    st.header("🛠️ Gestión de Servicios")
-    s1, s2 = st.columns([1, 1])
-    with s1: 
-        st.dataframe(pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio ($)"]), hide_index=True, use_container_width=True)
-        
-    with s2:
-        t_s_add, t_s_edit, t_s_del = st.tabs(["➕ Añadir", "✏️ Editar", "🗑️ Borrar"])
-        
-        with t_s_add:
-            with st.form("form_add_serv"):
-                sn = st.text_input("Nuevo Servicio")
-                sp = st.number_input("Precio ($)", min_value=0.0)
-                if st.form_submit_button("Guardar Servicio"):
-                    if sn:
-                        hoja_servicios.append_row([sn, sp])
-                        obtener_servicios.clear()
-                        st.rerun()
-                        
-        with t_s_edit:
-            if servicios_db:
-                es_sel = st.selectbox("Seleccionar Servicio a Editar", list(servicios_db.keys()), key="sb_edit_serv")
-                with st.form("form_edit_serv"):
-                    es_nom = st.text_input("Servicio", value=es_sel)
-                    es_pre = st.number_input("Precio ($)", min_value=0.0, value=float(servicios_db[es_sel]))
-                    if st.form_submit_button("Actualizar Servicio"):
-                        cell = hoja_servicios.find(es_sel)
-                        hoja_servicios.update_cell(cell.row, 1, es_nom)
-                        hoja_servicios.update_cell(cell.row, 2, es_pre)
-                        obtener_servicios.clear()
-                        st.rerun()
-                        
-        with t_s_del:
-            if servicios_db:
-                ds_sel = st.selectbox("Seleccionar Servicio a Borrar", list(servicios_db.keys()), key="sb_del_serv")
-                if st.button("🚨 Eliminar Servicio", type="primary", key="btn_del_serv"):
-                    cell = hoja_servicios.find(ds_sel)
-                    hoja_servicios.delete_rows(cell.row)
-                    obtener_servicios.clear()
-                    st.rerun()
