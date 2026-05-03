@@ -9,8 +9,6 @@ from email.message import EmailMessage
 import json
 import pandas as pd
 import time
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Miranda Service ERP", page_icon="🌿", layout="wide")
@@ -20,14 +18,12 @@ CORREO_PAPA = "MirandaServiceOficial@gmail.com"
 DIRECCION_PAPA_1 = "980 Dixie Line Rd"
 DIRECCION_PAPA_2 = "Newark, DE 19713"
 TELEFONO_PAPA = "(302) 602-9250"
-
-# 👇 PEGA AQUÍ EL ID DE TU CARPETA DE GOOGLE DRIVE 👇
-CARPETA_DRIVE_ID = "14gGXLuQNUSlS4JCCLlmLfeCcqgvoI1cI"
+SITIO_WEB = "www.mirandaservice.com"
 
 try:
     PASSWORD_APP_GMAIL = st.secrets["gmail_password"]
 except:
-    PASSWORD_APP_GMAIL = "yanwkulxewxpnccg" 
+    PASSWORD_APP_GMAIL = "yanwkulxewxpnccg" # Clave de 16 dígitos
 
 DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
 PLANTILLA_IMG = os.path.join(DIRECTORIO_ACTUAL, "plantilla_nueva.png")
@@ -41,22 +37,17 @@ def conectar_servicios():
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     else:
         creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales.json", scope)
-    
-    # Conexión a Sheets
     client = gspread.authorize(creds)
     sheet = client.open("Miranda_DB")
-    
-    # Conexión a Drive
-    drive_service = build('drive', 'v3', credentials=creds)
-    
-    return sheet, drive_service
+    return sheet
 
 try:
-    db, drive_service = conectar_servicios()
+    db = conectar_servicios()
     hoja_clientes = db.worksheet("Clientes")
     hoja_servicios = db.worksheet("Servicios")
     hoja_facturas = db.worksheet("Facturas")
     
+    # Intentar abrir la hoja de trabajos, si no existe, crearla automáticamente
     try:
         hoja_trabajos = db.worksheet("Trabajos")
     except gspread.exceptions.WorksheetNotFound:
@@ -203,12 +194,17 @@ with tab2:
                         pdf.image(PLANTILLA_IMG, x=0, y=0, w=210, h=297)
                     
                     blue = (0, 102, 204)
+                    
+                    # Encabezado con Sitio Web
                     pdf.set_font("Helvetica", 'B', 14); pdf.set_text_color(*blue)
                     pdf.text(120, 25, "MIRANDA SERVICE LLC")
                     pdf.set_font("Helvetica", '', 10); pdf.set_text_color(0,0,0)
                     pdf.text(120, 30, DIRECCION_PAPA_1); pdf.text(120, 35, DIRECCION_PAPA_2)
                     pdf.text(120, 40, f"Tel: {TELEFONO_PAPA}")
+                    pdf.set_font("Helvetica", 'B', 10); pdf.set_text_color(*blue)
+                    pdf.text(120, 45, f"Web: {SITIO_WEB}")
 
+                    # Billed To
                     pdf.set_font("Helvetica", 'B', 11); pdf.set_text_color(*blue)
                     pdf.text(15, 60, "BILLED TO:")
                     pdf.text(120, 60, f"INVOICE #: {folio}")
@@ -222,6 +218,7 @@ with tab2:
                     pdf.set_text_color(200, 0, 0); pdf.text(120, 70, f"Due Date: {f_venc.strftime('%m/%d/%Y')}")
                     pdf.set_text_color(0, 0, 0)
 
+                    # Tabla
                     pdf.set_fill_color(*blue); pdf.set_text_color(255,255,255)
                     pdf.set_xy(10, 90)
                     pdf.cell(30, 8, "Date", 1, 0, 'C', True)
@@ -240,6 +237,7 @@ with tab2:
                         pdf.cell(35, 7, f"${row['Precio']:,.2f}", 1, 0, 'C')
                         pdf.cell(35, 7, f"${row['TotalFila']:,.2f}", 1, 1, 'C')
 
+                    # Totales
                     ty = pdf.get_y() + 8
                     pdf.set_font("Helvetica", 'B', 10)
                     pdf.text(140, ty, "Subtotal:")
@@ -251,6 +249,7 @@ with tab2:
                     pdf.text(140, ty+16, "TOTAL:")
                     pdf.text(175, ty+16, f"${total_due:,.2f}")
 
+                    # Pagos
                     pdf.set_font("Helvetica", 'B', 11); pdf.text(15, ty, "PAYMENT OPTIONS:")
                     pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", '', 9)
                     pm_y = ty + 6
@@ -258,33 +257,17 @@ with tab2:
                     if venmo_info: pdf.text(15, pm_y, f"Venmo: {venmo_info}"); pm_y += 5
                     if cash_check: pdf.text(15, pm_y, "Check: Payable to Miranda Service / Cash Accepted")
 
+                    # Pie de página con Sitio Web
                     pdf.set_text_color(100, 100, 100); pdf.set_font("Helvetica", '', 8)
-                    footer_text = "Thank you for choosing Miranda Service!\nFull payment is due within 5 days. Late fee of 5% may apply."
+                    footer_text = f"Thank you for choosing Miranda Service! Visit us at {SITIO_WEB}\nFull payment is due within 5 days. Late fee of 5% may apply."
                     pdf.set_xy(15, 255); pdf.multi_cell(180, 4, footer_text, align='C')
 
+                    # Guardar y Enviar
                     fname = f"{folio}_{c_fac.replace(' ','_')}.pdf"
                     pdf.output(fname)
                     
-                    # --- SUBIR A GOOGLE DRIVE ---
-                    link_drive = ""
-                    try:
-                        file_metadata = {'name': fname, 'parents': [CARPETA_DRIVE_ID]}
-                        media = MediaFileUpload(fname, mimetype='application/pdf')
-                        archivo_drive = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
-                        
-                        # Dar permiso de lectura para que puedas verlo al darle clic
-                        drive_service.permissions().create(
-                            fileId=archivo_drive.get('id'),
-                            body={'type': 'anyone', 'role': 'reader'}
-                        ).execute()
-                        
-                        link_drive = archivo_drive.get('webViewLink')
-                    except Exception as e:
-                        st.warning(f"No se pudo subir a Google Drive: {e}")
-                        link_drive = "Error"
-                    
-                    # Guardar en Facturas con el link de Drive
-                    hoja_facturas.append_row([folio, c_fac, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy", link_drive])
+                    # Registrar en Google Sheets (Solo 7 columnas, sin Drive)
+                    hoja_facturas.append_row([folio, c_fac, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
                     
                     # Actualizar estado de los Trabajos
                     todas_filas_trabajos = hoja_trabajos.get_all_values()
@@ -295,7 +278,6 @@ with tab2:
                     obtener_facturas_records.clear()
                     obtener_trabajos.clear()
                     
-                    # Enviar Correo
                     if cor_cli and PASSWORD_APP_GMAIL != "yanwkulxewxpnccg":
                         try:
                             msg = EmailMessage()
@@ -308,7 +290,9 @@ with tab2:
                         except Exception as e: st.error(f"Error correo: {e}")
 
                     st.success(f"Factura {folio} generada. Trabajos marcados como completados.")
-                    with open(fname, "rb") as f: st.download_button("📥 Descargar PDF Local", f, file_name=fname, type="primary")
+                    with open(fname, "rb") as f: st.download_button("📥 Descargar PDF", f, file_name=fname, type="primary")
+                    
+                    # Borrar archivo para no saturar el servidor en la nube
                     os.remove(fname)
         else:
             st.success("🎉 No hay clientes con trabajos pendientes de facturar.")
@@ -351,13 +335,9 @@ with tab3:
         st.divider()
         st.write("### 🗂️ Registro General")
         
-        # Configurar la tabla para que el link de Drive sea clicable
-        column_config = {}
-        if df_f.shape[1] >= 8: # Asumiendo que el Link de Drive está en la 8va columna
-            nombre_col_link = df_f.columns[7]
-            column_config[nombre_col_link] = st.column_config.LinkColumn("📄 Ver PDF en Drive")
-            
-        st.dataframe(df_f, hide_index=True, use_container_width=True, column_config=column_config)
+        # Limpiar columnas extra si existen por el código anterior
+        if 'Ruta_PDF' in df_f.columns: df_f = df_f.drop(columns=['Ruta_PDF'])
+        st.dataframe(df_f, hide_index=True, use_container_width=True)
         
         st.divider()
         st.write("### 🛠️ Acciones sobre Facturas")
