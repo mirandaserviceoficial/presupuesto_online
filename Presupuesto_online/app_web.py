@@ -101,6 +101,15 @@ def obtener_trabajos():
 clientes_db = obtener_clientes()
 servicios_db = obtener_servicios()
 
+# --- INICIALIZAR MEMORIA PARA EL PRECIO ---
+if "precio_inicial_cargado" not in st.session_state:
+    st.session_state["precio_inicial_cargado"] = True
+    if servicios_db:
+        primer_srv = list(servicios_db.keys())[0]
+        st.session_state["num_precio_reg"] = float(servicios_db.get(primer_srv, 0.0))
+    else:
+        st.session_state["num_precio_reg"] = 0.0
+
 # --- INTERFAZ PRINCIPAL ---
 st.title("🌿 MIRANDA SERVICE ERP")
 tab1, tab2, tab3, tab4 = st.tabs(["🗓️ Registro Semanal", "🧾 Facturar Mes", "📊 Finanzas", "🗂️ Directorio"])
@@ -109,28 +118,30 @@ tab1, tab2, tab3, tab4 = st.tabs(["🗓️ Registro Semanal", "🧾 Facturar Mes
 with tab1:
     st.header("Añadir Trabajo a la Cuenta del Cliente")
     if clientes_db:
-        # SACAMOS ESTO DEL FORMULARIO PARA QUE ACTUALICE EN VIVO
+        
+        # Función para actualizar el precio al instante
+        def actualizar_precio_sugerido():
+            servicio_actual = st.session_state.select_serv_reg
+            st.session_state.num_precio_reg = float(servicios_db.get(servicio_actual, 0.0))
+
         c_reg = st.selectbox("Seleccionar Cliente", list(clientes_db.keys()), key="select_cli_reg")
         f_reg = st.date_input("Fecha del Servicio", datetime.date.today(), key="date_reg")
         
         c1, c2, c3 = st.columns([3, 1, 1])
         with c1: 
-            s_reg = st.selectbox("Servicio Realizado", list(servicios_db.keys()), key="select_serv_reg")
+            s_reg = st.selectbox("Servicio Realizado", list(servicios_db.keys()), key="select_serv_reg", on_change=actualizar_precio_sugerido)
         with c2: 
             cant_reg = st.number_input("Cantidad", min_value=1, step=1, key="num_cant_reg")
-        
-        # El precio sugerido se calcula al instante porque Streamlit se recarga al cambiar el 'selectbox'
-        precio_sug = servicios_db.get(s_reg, 0.0) if s_reg else 0.0
         with c3: 
-            p_reg = st.number_input("Precio Unitario ($)", value=float(precio_sug), min_value=0.0, key="num_precio_reg")
+            # Streamlit respetará el valor forzado por la memoria
+            p_reg = st.number_input("Precio Unitario ($)", min_value=0.0, key="num_precio_reg")
         
-        # Un botón normal en vez de un form_submit_button
         if st.button("💾 Guardar Trabajo (Pendiente)", type="primary", use_container_width=True):
             id_trabajo = str(int(time.time())) 
             hoja_trabajos.append_row([id_trabajo, c_reg, str(f_reg), s_reg, cant_reg, p_reg, "Pendiente"])
             obtener_trabajos.clear()
             st.success(f"Trabajo guardado exitosamente para {c_reg}.")
-            time.sleep(1) # Pequeña pausa para que el usuario lea el éxito
+            time.sleep(1)
             st.rerun()
                 
         st.divider()
@@ -143,7 +154,7 @@ with tab1:
                 df_pendientes['Subtotal'] = df_pendientes['Cantidad'] * df_pendientes['Precio']
                 st.dataframe(df_pendientes[['Cliente', 'Fecha', 'Servicio', 'Cantidad', 'Precio', 'Subtotal']], hide_index=True, use_container_width=True)
                 
-                # --- NUEVA SECCIÓN: EDICIÓN DE TRABAJOS ---
+                # --- SECCIÓN: EDICIÓN DE TRABAJOS ---
                 st.write("### ✏️ Editar / Borrar Trabajos")
                 df_pendientes['ID'] = df_pendientes['ID'].astype(str)
                 opciones_tr = df_pendientes.apply(lambda x: f"{x['ID']} | {x['Cliente']} - {x['Fecha']} - {x['Servicio']}", axis=1).tolist()
@@ -179,7 +190,6 @@ with tab1:
                             hoja_trabajos.delete_rows(cell.row)
                             obtener_trabajos.clear()
                             st.rerun()
-                # ------------------------------------------
 
             else:
                 st.info("Todos los trabajos han sido facturados.")
@@ -337,7 +347,7 @@ with tab2:
                     st.success(f"Factura {folio} generada. Trabajos marcados como completados.")
                     with open(fname, "rb") as f: st.download_button("📥 Descargar PDF", f, file_name=fname, type="primary")
                     
-                    # Borrar archivo para no saturar el servidor en la nube
+                    # Borrar archivo para no saturar el servidor
                     os.remove(fname)
         else:
             st.success("🎉 No hay clientes con trabajos pendientes de facturar.")
@@ -380,7 +390,6 @@ with tab3:
         st.divider()
         st.write("### 🗂️ Registro General")
         
-        # Limpiar columnas extra si existen por el código anterior
         if 'Ruta_PDF' in df_f.columns: df_f = df_f.drop(columns=['Ruta_PDF'])
         st.dataframe(df_f, hide_index=True, use_container_width=True)
         
