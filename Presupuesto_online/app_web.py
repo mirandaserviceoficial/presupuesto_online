@@ -436,13 +436,24 @@ with tab4:
         if clientes_db:
             c_ed = st.selectbox("Elegir Cliente", list(clientes_db.keys()), key="ed_c")
             with st.form("edit_cli"):
-                en = st.text_input("Nombre", value=c_ed); ec = st.text_input("Email", value=clientes_db[c_ed]['correo'])
-                et = st.text_input("Tel", value=clientes_db[c_ed]['telefono']); ed = st.text_area("Dir", value=clientes_db[c_ed]['direccion'])
+                en = st.text_input("Nombre", value=c_ed)
+                ec = st.text_input("Email", value=clientes_db[c_ed]['correo'])
+                et = st.text_input("Tel", value=clientes_db[c_ed]['telefono'])
+                ed = st.text_area("Dir", value=clientes_db[c_ed]['direccion'])
+                
                 if st.form_submit_button("Actualizar"):
-                    row = hoja_clientes.find(c_ed).row
-                    hoja_clientes.update_cell(row, 1, en); hoja_clientes.update_cell(row, 2, ec)
-                    hoja_clientes.update_cell(row, 3, ed); hoja_clientes.update_cell(row, 4, et)
-                    obtener_clientes.clear(); st.rerun()
+                    celda = hoja_clientes.find(c_ed) # Primero buscamos
+                    
+                    if celda: # Si sí lo encontró...
+                        row = celda.row
+                        hoja_clientes.update_cell(row, 1, en)
+                        hoja_clientes.update_cell(row, 2, ec)
+                        hoja_clientes.update_cell(row, 3, ed)
+                        hoja_clientes.update_cell(row, 4, et)
+                        obtener_clientes.clear()
+                        st.rerun()
+                    else: # Si no lo encontró, mostramos un aviso en vez de chocar
+                        st.error(f"Error: No se encontró a '{c_ed}' en Google Sheets. Revisa si tiene espacios al final del nombre.")
     with t_c3:
         if clientes_db:
             c_de = st.selectbox("Borrar Cliente", list(clientes_db.keys()), key="de_c")
