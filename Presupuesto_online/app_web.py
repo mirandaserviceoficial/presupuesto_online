@@ -314,7 +314,7 @@ with tab2:
 
                     # Pie de página con Sitio Web
                     pdf.set_text_color(100, 100, 100); pdf.set_font("Helvetica", '', 8)
-                    footer_text = f"Thank you for choosing Miranda Service! Visit us at {SITIO_WEB}\nFull payment is due within 5 days. Late fee of 5% may apply."
+                    footer_text = f"Thank you for choosing Miranda Service! Visit us at {SITIO_WEB}."
                     pdf.set_xy(15, 255); pdf.multi_cell(180, 4, footer_text, align='C')
 
                     # Guardar y Enviar
