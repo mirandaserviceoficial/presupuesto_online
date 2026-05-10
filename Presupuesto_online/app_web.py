@@ -18,7 +18,7 @@ CORREO_PAPA = "MirandaServiceOficial@gmail.com"
 DIRECCION_PAPA_1 = "980 Dixie Line Rd"
 DIRECCION_PAPA_2 = "Newark, DE 19713"
 TELEFONO_PAPA = "(302) 602-9250"
-SITIO_WEB = "www.mirandaservice.com"
+SITIO_WEB = "mirandaservice.com"
 
 try:
     PASSWORD_APP_GMAIL = st.secrets["gmail_password"]
