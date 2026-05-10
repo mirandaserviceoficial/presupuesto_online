@@ -11,7 +11,7 @@ import pandas as pd
 import time
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Miranda Service ERP", page_icon="🌿", layout="wide")
+st.set_page_config(page_title="Miranda Service", page_icon="🌿", layout="wide")
 
 # --- DATOS DE CONFIGURACIÓN ---
 CORREO_PAPA = "MirandaServiceOficial@gmail.com"
@@ -133,7 +133,6 @@ with tab1:
         with c2: 
             cant_reg = st.number_input("Cantidad", min_value=1, step=1, key="num_cant_reg")
         with c3: 
-            # Streamlit respetará el valor forzado por la memoria
             p_reg = st.number_input("Precio Unitario ($)", min_value=0.0, key="num_precio_reg")
         
         if st.button("💾 Guardar Trabajo (Pendiente)", type="primary", use_container_width=True):
@@ -175,21 +174,27 @@ with tab1:
                             n_p = st.number_input("Precio ($)", min_value=0.0, value=float(datos_tr['Precio']))
                             
                             if st.form_submit_button("Actualizar Trabajo"):
-                                cell = hoja_trabajos.find(id_target)
-                                hoja_trabajos.update_cell(cell.row, 3, str(n_f))
-                                hoja_trabajos.update_cell(cell.row, 4, n_s)
-                                hoja_trabajos.update_cell(cell.row, 5, n_c)
-                                hoja_trabajos.update_cell(cell.row, 6, n_p)
-                                obtener_trabajos.clear()
-                                st.rerun()
+                                try:
+                                    cell = hoja_trabajos.find(id_target)
+                                    hoja_trabajos.update_cell(cell.row, 3, str(n_f))
+                                    hoja_trabajos.update_cell(cell.row, 4, n_s)
+                                    hoja_trabajos.update_cell(cell.row, 5, n_c)
+                                    hoja_trabajos.update_cell(cell.row, 6, n_p)
+                                    obtener_trabajos.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error("Error al actualizar en la nube. Inténtalo de nuevo.")
                                 
                     with col_e2:
                         st.write("**Eliminar registro:**")
                         if st.button("🗑️ Borrar este trabajo", type="primary", use_container_width=True):
-                            cell = hoja_trabajos.find(id_target)
-                            hoja_trabajos.delete_rows(cell.row)
-                            obtener_trabajos.clear()
-                            st.rerun()
+                            try:
+                                cell = hoja_trabajos.find(id_target)
+                                hoja_trabajos.delete_rows(cell.row)
+                                obtener_trabajos.clear()
+                                st.rerun()
+                            except:
+                                st.error("Error al borrar.")
 
             else:
                 st.info("Todos los trabajos han sido facturados.")
@@ -227,11 +232,17 @@ with tab2:
             
             with col_t1:
                 st.write("### Payment Information")
-                zelle_info = st.text_input("Zelle Email/Phone", value=CORREO_PAPA)
-                venmo_info = st.text_input("Venmo Username", value="@MirandaService")
+                zelle_info = st.text_input("Zelle Email/Phone", "(302) 602-9250")
                 cash_check = st.checkbox("Accept Cash/Check", value=True)
 
-            if st.button("🚀 Emitir Factura Mensual", type="primary", use_container_width=True):
+            st.divider()
+            st.write("### 🔒 Confirmación de Seguridad")
+            frase_secreta = st.text_input("Ingresa la frase de seguridad para habilitar el botón:", placeholder="Escribe aquí...")
+            
+            # --- VALIDACIÓN DE FRASE PARA ACTIVAR BOTÓN ---
+            boton_activado = (frase_secreta == "ELESVAN MI HIJO FAVORITO")
+            
+            if st.button("🚀 Emitir Factura Mensual", type="primary", use_container_width=True, disabled=not boton_activado):
                 with st.spinner("Compilando trabajos y creando PDF..."):
                     folio = f"FAC-{len(hoja_facturas.get_all_values()):04d}"
                     f_emision = datetime.date.today()
@@ -252,7 +263,7 @@ with tab2:
                     
                     # Encabezado con Sitio Web
                     pdf.set_font("Helvetica", 'B', 14); pdf.set_text_color(*blue)
-                    pdf.text(120, 25, "MIRANDA SERVICE LLC")
+                    pdf.text(120, 25, "MIRANDA SERVICE")
                     pdf.set_font("Helvetica", '', 10); pdf.set_text_color(0,0,0)
                     pdf.text(120, 30, DIRECCION_PAPA_1); pdf.text(120, 35, DIRECCION_PAPA_2)
                     pdf.text(120, 40, f"Tel: {TELEFONO_PAPA}")
@@ -309,7 +320,6 @@ with tab2:
                     pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", '', 9)
                     pm_y = ty + 6
                     if zelle_info: pdf.text(15, pm_y, f"Zelle: {zelle_info}"); pm_y += 5
-                    if venmo_info: pdf.text(15, pm_y, f"Venmo: {venmo_info}"); pm_y += 5
                     if cash_check: pdf.text(15, pm_y, "Check: Payable to Miranda Service / Cash Accepted")
 
                     # Pie de página con Sitio Web
@@ -404,86 +414,78 @@ with tab3:
             if pendientes:
                 f_p = st.selectbox("Marcar Pagada:", pendientes, key="p_f")
                 if st.button("💰 Confirmar Pago", use_container_width=True):
-                    hoja_facturas.update_cell(hoja_facturas.find(f_p).row, 6, "Pagado")
-                    obtener_facturas_records.clear(); st.rerun()
+                    try:
+                        hoja_facturas.update_cell(hoja_facturas.find(f_p).row, 6, "Pagado")
+                        obtener_facturas_records.clear(); st.rerun()
+                    except: st.error("Error al actualizar la base de datos.")
         with c_r:
             if pagadas:
                 f_r = st.selectbox("Quitar Pagado:", pagadas, key="r_f")
                 if st.button("⏪ Revertir a Pendiente", use_container_width=True):
-                    hoja_facturas.update_cell(hoja_facturas.find(f_r).row, 6, "Pendiente")
-                    obtener_facturas_records.clear(); st.rerun()
+                    try:
+                        hoja_facturas.update_cell(hoja_facturas.find(f_r).row, 6, "Pendiente")
+                        obtener_facturas_records.clear(); st.rerun()
+                    except: st.error("Error al actualizar la base de datos.")
         with c_b:
             if todas:
                 f_b = st.selectbox("Eliminar Factura:", todas, key="b_f")
                 if st.button("🗑️ Borrar Factura", type="primary", use_container_width=True):
-                    hoja_facturas.delete_rows(hoja_facturas.find(f_b).row)
-                    obtener_facturas_records.clear(); st.rerun()
+                    try:
+                        hoja_facturas.delete_rows(hoja_facturas.find(f_b).row)
+                        obtener_facturas_records.clear(); st.rerun()
+                    except: st.error("Error al borrar de la base de datos.")
     else: st.info("No hay facturas registradas.")
 
-# --- PESTAÑA 4: DIRECTORIO (CRUD CLIENTES Y SERVICIOS) ---
-with tab4:
-    st.header("👥 Gestión de Clientes")
-    df_cl = pd.DataFrame([{'Nombre': k, 'Correo': v['correo'], 'Tel': v['telefono'], 'Dirección': v['direccion']} for k, v in clientes_db.items()])
-    st.dataframe(df_cl, hide_index=True, use_container_width=True)
-    
-    t_c1, t_c2, t_c3 = st.tabs(["➕ Añadir", "✏️ Editar", "🗑️ Borrar"])
-    with t_c1:
-        with st.form("add_cli"):
-            n_n = st.text_input("Nombre"); n_c = st.text_input("Email"); n_t = st.text_input("Tel"); n_d = st.text_area("Dir")
-            if st.form_submit_button("Guardar"):
-                if n_n: hoja_clientes.append_row([n_n, n_c, n_d, n_t]); obtener_clientes.clear(); st.rerun()
-    with t_c2:
-        if clientes_db:
-            c_ed = st.selectbox("Elegir Cliente", list(clientes_db.keys()), key="ed_c")
-            with st.form("edit_cli"):
-                en = st.text_input("Nombre", value=c_ed)
-                ec = st.text_input("Email", value=clientes_db[c_ed]['correo'])
-                et = st.text_input("Tel", value=clientes_db[c_ed]['telefono'])
-                ed = st.text_area("Dir", value=clientes_db[c_ed]['direccion'])
-                
-                if st.form_submit_button("Actualizar"):
-                    celda = hoja_clientes.find(c_ed) # Primero buscamos
-                    
-                    if celda: # Si sí lo encontró...
-                        row = celda.row
-                        hoja_clientes.update_cell(row, 1, en)
-                        hoja_clientes.update_cell(row, 2, ec)
-                        hoja_clientes.update_cell(row, 3, ed)
-                        hoja_clientes.update_cell(row, 4, et)
-                        obtener_clientes.clear()
-                        st.rerun()
-                    else: # Si no lo encontró, mostramos un aviso en vez de chocar
-                        st.error(f"Error: No se encontró a '{c_ed}' en Google Sheets. Revisa si tiene espacios al final del nombre.")
-    with t_c3:
-        if clientes_db:
-            c_de = st.selectbox("Borrar Cliente", list(clientes_db.keys()), key="de_c")
-            if st.button("🚨 Eliminar Definitivamente", type="primary"):
-                hoja_clientes.delete_rows(hoja_clientes.find(c_de).row)
-                obtener_clientes.clear(); st.rerun()
 
-    st.divider()
-    st.header("🛠️ Gestión de Servicios")
-    s1, s2 = st.columns([1, 1])
-    with s1: st.dataframe(pd.DataFrame(list(servicios_db.items()), columns=["Servicio", "Precio ($)"]), hide_index=True, use_container_width=True)
-    with s2:
-        ts1, ts2, ts3 = st.tabs(["➕", "✏️", "🗑️"])
-        with ts1:
-            with st.form("add_s"):
-                sn = st.text_input("Servicio"); sp = st.number_input("Precio", min_value=0.0)
-                if st.form_submit_button("Añadir"):
-                    if sn: hoja_servicios.append_row([sn, sp]); obtener_servicios.clear(); st.rerun()
-        with ts2:
-            if servicios_db:
-                s_ed = st.selectbox("Editar Servicio", list(servicios_db.keys()), key="ed_s")
-                with st.form("edit_s"):
-                    sen = st.text_input("Nombre", value=s_ed); sep = st.number_input("Precio", value=float(servicios_db[s_ed]))
-                    if st.form_submit_button("Actualizar"):
-                        row = hoja_servicios.find(s_ed).row
-                        hoja_servicios.update_cell(row, 1, sen); hoja_servicios.update_cell(row, 2, sep)
-                        obtener_servicios.clear(); st.rerun()
-        with ts3:
-            if servicios_db:
-                s_de = st.selectbox("Borrar Servicio", list(servicios_db.keys()), key="de_s")
-                if st.button("🗑️ Borrar", key="b_s"):
-                    hoja_servicios.delete_rows(hoja_servicios.find(s_de).row)
-                    obtener_servicios.clear(); st.rerun()
+# --- PESTAÑA 4: DIRECTORIO (CRUD ESTILO HOJA DE CÁLCULO) ---
+with tab4:
+    st.header("🗂️ Gestión de Directorio interactivo")
+    st.info("💡 **Instrucciones:** Edita directamente en las tablas haciendo doble clic en las celdas. Puedes añadir nuevas filas abajo o seleccionarlas a la izquierda para presionar 'suprimir' (borrar). Al terminar, no olvides presionar el botón de guardar correspondiente.")
+    
+    col_c, col_s = st.columns([2, 1])
+    
+    with col_c:
+        st.subheader("👥 Clientes")
+        # Obtener los datos como DataFrame
+        registros_clientes = hoja_clientes.get_all_records()
+        if registros_clientes:
+            df_cl = pd.DataFrame(registros_clientes)
+        else:
+            df_cl = pd.DataFrame(columns=["Nombre", "Correo", "Direccion", "Telefono"])
+            
+        # Data Editor (La magia de editar como Excel)
+        df_cl_edit = st.data_editor(df_cl, num_rows="dynamic", use_container_width=True, key="edit_cli")
+        
+        # Botón para empujar cambios a Google Sheets
+        if st.button("💾 Guardar Directorio de Clientes", type="primary", use_container_width=True):
+            # Limpiamos la hoja y re-escribimos todo el dataframe
+            hoja_clientes.clear()
+            # Combinamos las cabeceras con los datos para subirlos
+            datos_nuevos = [df_cl_edit.columns.tolist()] + df_cl_edit.fillna("").astype(str).values.tolist()
+            hoja_clientes.append_rows(datos_nuevos)
+            obtener_clientes.clear()
+            st.success("¡Directorio de clientes actualizado!")
+            time.sleep(1)
+            st.rerun()
+
+    with col_s:
+        st.subheader("🛠️ Servicios")
+        # Obtener los datos como DataFrame
+        registros_servicios = hoja_servicios.get_all_records()
+        if registros_servicios:
+            df_srv = pd.DataFrame(registros_servicios)
+        else:
+            df_srv = pd.DataFrame(columns=["Servicio", "Precio"])
+            
+        # Data Editor (La magia de editar como Excel)
+        df_srv_edit = st.data_editor(df_srv, num_rows="dynamic", use_container_width=True, key="edit_srv")
+        
+        # Botón para empujar cambios a Google Sheets
+        if st.button("💾 Guardar Precios y Servicios", type="primary", use_container_width=True):
+            hoja_servicios.clear()
+            datos_nuevos = [df_srv_edit.columns.tolist()] + df_srv_edit.fillna("").values.tolist()
+            hoja_servicios.append_rows(datos_nuevos)
+            obtener_servicios.clear()
+            st.success("¡Servicios actualizados!")
+            time.sleep(1)
+            st.rerun()
