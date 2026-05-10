@@ -237,7 +237,7 @@ with tab2:
 
             st.divider()
             st.write("### 🔒 Confirmación de Seguridad")
-            frase_secreta = st.text_input("Ingresa la frase de seguridad para habilitar el botón escriba "ELESVAN MI HIJO FAVORITO"", placeholder="Escribe aquí...")
+            frase_secreta = st.text_input("Ingresa la frase de seguridad para habilitar el botón escriba: ELESVAN MI HIJO FAVORITO", placeholder="Escribe aquí...")
             
             # --- VALIDACIÓN DE FRASE PARA ACTIVAR BOTÓN ---
             boton_activado = (frase_secreta == "ELESVAN MI HIJO FAVORITO")
