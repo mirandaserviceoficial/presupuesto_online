@@ -145,20 +145,26 @@ with tab1:
         todos_los_trabajos = obtener_trabajos()
         if todos_los_trabajos:
             df_total = pd.DataFrame(todos_los_trabajos)
-            # Separamos los pendientes de los facturados para no perder el historial
-            df_p = df_total[df_total['Estado'] == 'Pendiente'].copy()
-            df_f_hist = df_total[df_total['Estado'] != 'Pendiente'].copy()
-
-            if not df_p.empty:
-                # Editor interactivo para los pendientes
+            # Editor interactivo para los pendientes con candados de seguridad
                 df_p_editado = st.data_editor(
                     df_p, 
-                    num_rows="dynamic", 
+                    num_rows="fixed",  # <--- Evita que se creen nuevos trabajos desde la tabla
                     use_container_width=True, 
                     key="editor_trabajos_pendientes",
                     column_config={
                         "ID": st.column_config.TextColumn("ID", disabled=True),
-                        "Estado": st.column_config.SelectboxColumn("Estado", options=["Pendiente", "Facturado"])
+                        "Estado": st.column_config.TextColumn("Estado", disabled=True), # <--- Bloquea la edición
+                        "Cliente": st.column_config.SelectboxColumn(
+                            "Cliente", 
+                            options=list(clientes_db.keys()), # <--- Desplegable con tus clientes
+                            required=True
+                        ),
+                        "Servicio": st.column_config.SelectboxColumn(
+                            "Servicio", 
+                            options=list(servicios_db.keys()) # <--- Desplegable con tus servicios
+                        ),
+                        "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=1),
+                        "Precio": st.column_config.NumberColumn("Precio", min_value=0.0)
                     }
                 )
                 
