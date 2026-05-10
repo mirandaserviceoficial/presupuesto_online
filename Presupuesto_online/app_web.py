@@ -23,7 +23,7 @@ SITIO_WEB = "www.mirandaservice.com"
 try:
     PASSWORD_APP_GMAIL = st.secrets["gmail_password"]
 except:
-    PASSWORD_APP_GMAIL = "yanwkulxewxpnccg" # Clave de 16 dígitos
+    PASSWORD_APP_GMAIL = "yanwkulxewxpnccg" 
 
 DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
 PLANTILLA_IMG = os.path.join(DIRECTORIO_ACTUAL, "plantilla_nueva.png")
@@ -47,7 +47,6 @@ try:
     hoja_servicios = db.worksheet("Servicios")
     hoja_facturas = db.worksheet("Facturas")
     
-    # Intentar abrir la hoja de trabajos, si no existe, crearla automáticamente
     try:
         hoja_trabajos = db.worksheet("Trabajos")
     except gspread.exceptions.WorksheetNotFound:
@@ -101,9 +100,7 @@ def obtener_trabajos():
 clientes_db = obtener_clientes()
 servicios_db = obtener_servicios()
 
-# --- INICIALIZAR MEMORIA PARA EL PRECIO ---
-if "precio_inicial_cargado" not in st.session_state:
-    st.session_state["precio_inicial_cargado"] = True
+if "num_precio_reg" not in st.session_state:
     if servicios_db:
         primer_srv = list(servicios_db.keys())[0]
         st.session_state["num_precio_reg"] = float(servicios_db.get(primer_srv, 0.0))
@@ -112,14 +109,12 @@ if "precio_inicial_cargado" not in st.session_state:
 
 # --- INTERFAZ PRINCIPAL ---
 st.title("🌿 MIRANDA SERVICE ERP")
-tab1, tab2, tab3, tab4 = st.tabs(["🗓️ Registro Semanal", "🧾 Facturar Mes", "📊 Finanzas", "🗂️ Directorio"])
+tab1, tab2, tab3, tab4 = st.tabs(["🗓️ REGISTRO SEMANAL", "🧾 FACTURAR MES", "📊 FINANZAS", "🗂️ DIRECTORIO"])
 
-# --- PESTAÑA 1: REGISTRO SEMANAL DE TRABAJOS ---
+# --- PESTAÑA 1: REGISTRO SEMANAL ---
 with tab1:
-    st.header("Añadir Trabajo a la Cuenta del Cliente")
+    st.header("AÑADIR NUEVO TRABAJO")
     if clientes_db:
-        
-        # Función para actualizar el precio al instante
         def actualizar_precio_sugerido():
             servicio_actual = st.session_state.select_serv_reg
             st.session_state.num_precio_reg = float(servicios_db.get(servicio_actual, 0.0))
@@ -135,7 +130,7 @@ with tab1:
         with c3: 
             p_reg = st.number_input("Precio Unitario ($)", min_value=0.0, key="num_precio_reg")
         
-        if st.button("💾 Guardar Trabajo (Pendiente)", type="primary", use_container_width=True):
+        if st.button("💾 GUARDAR TRABAJO", type="primary", use_container_width=True):
             id_trabajo = str(int(time.time())) 
             hoja_trabajos.append_row([id_trabajo, c_reg, str(f_reg), s_reg, cant_reg, p_reg, "Pendiente"])
             obtener_trabajos.clear()
@@ -144,80 +139,53 @@ with tab1:
             st.rerun()
                 
         st.divider()
-        st.subheader("Trabajos Acumulados (Sin Facturar)")
-        trabajos_act = obtener_trabajos()
-        if trabajos_act:
-            df_t = pd.DataFrame(trabajos_act)
-            df_pendientes = df_t[df_t['Estado'] == 'Pendiente'].copy()
-            if not df_pendientes.empty:
-                df_pendientes['Subtotal'] = df_pendientes['Cantidad'] * df_pendientes['Precio']
-                st.dataframe(df_pendientes[['Cliente', 'Fecha', 'Servicio', 'Cantidad', 'Precio', 'Subtotal']], hide_index=True, use_container_width=True)
-                
-                # --- SECCIÓN: EDICIÓN DE TRABAJOS ---
-                st.write("### ✏️ Editar / Borrar Trabajos")
-                df_pendientes['ID'] = df_pendientes['ID'].astype(str)
-                opciones_tr = df_pendientes.apply(lambda x: f"{x['ID']} | {x['Cliente']} - {x['Fecha']} - {x['Servicio']}", axis=1).tolist()
-                
-                tr_sel = st.selectbox("Selecciona un registro para modificar:", opciones_tr)
-                
-                if tr_sel:
-                    id_target = tr_sel.split(" | ")[0].strip()
-                    datos_tr = df_pendientes[df_pendientes['ID'] == id_target].iloc[0]
-                    
-                    col_e1, col_e2 = st.columns([2, 1])
-                    with col_e1:
-                        with st.form("form_edit_tr_v2"):
-                            st.write("**Modificar información del trabajo:**")
-                            
-                            try:
-                                index_cliente_actual = list(clientes_db.keys()).index(datos_tr['Cliente'])
-                            except ValueError:
-                                index_cliente_actual = 0
-                                
-                            nuevo_cliente = st.selectbox("Cliente", list(clientes_db.keys()), index=index_cliente_actual)
-                            nueva_fecha = st.date_input("Fecha", pd.to_datetime(datos_tr['Fecha']).date())
-                            nuevo_servicio = st.text_input("Servicio", value=datos_tr['Servicio'])
-                            nueva_cantidad = st.number_input("Cantidad", min_value=1, value=int(datos_tr['Cantidad']))
-                            nuevo_precio = st.number_input("Precio ($)", min_value=0.0, value=float(datos_tr['Precio']))
-                            
-                            if st.form_submit_button("Actualizar Registro"):
-                                try:
-                                    cell = hoja_trabajos.find(id_target)
-                                    fila = cell.row
-                                    hoja_trabajos.update_cell(fila, 2, nuevo_cliente)
-                                    hoja_trabajos.update_cell(fila, 3, str(nueva_fecha))
-                                    hoja_trabajos.update_cell(fila, 4, nuevo_servicio)
-                                    hoja_trabajos.update_cell(fila, 5, nueva_cantidad)
-                                    hoja_trabajos.update_cell(fila, 6, nuevo_precio)
-                                    
-                                    obtener_trabajos.clear()
-                                    st.success("Trabajo actualizado correctamente.")
-                                    time.sleep(1)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error("Error al actualizar en la nube. Inténtalo de nuevo.")
-                                
-                    with col_e2:
-                        st.write("**Eliminar registro:**")
-                        if st.button("🗑️ Borrar este trabajo", type="primary", use_container_width=True):
-                            try:
-                                cell = hoja_trabajos.find(id_target)
-                                hoja_trabajos.delete_rows(cell.row)
-                                obtener_trabajos.clear()
-                                st.rerun()
-                            except:
-                                st.error("Error al borrar.")
+        st.subheader("TRABAJOS ACUMULADOS (SIN FACTURAR)")
+        st.info("💡 instruccion: edita directamente en la tabla (doble clic). puedes borrar filas seleccionandolas. al terminar pulsa el boton guardar.")
+        
+        todos_los_trabajos = obtener_trabajos()
+        if todos_los_trabajos:
+            df_total = pd.DataFrame(todos_los_trabajos)
+            # Separamos los pendientes de los facturados para no perder el historial
+            df_p = df_total[df_total['Estado'] == 'Pendiente'].copy()
+            df_f_hist = df_total[df_total['Estado'] != 'Pendiente'].copy()
 
+            if not df_p.empty:
+                # Editor interactivo para los pendientes
+                df_p_editado = st.data_editor(
+                    df_p, 
+                    num_rows="dynamic", 
+                    use_container_width=True, 
+                    key="editor_trabajos_pendientes",
+                    column_config={
+                        "ID": st.column_config.TextColumn("ID", disabled=True),
+                        "Estado": st.column_config.SelectColumn("Estado", options=["Pendiente", "Facturado"])
+                    }
+                )
+                
+                if st.button("💾 GUARDAR CAMBIOS EN TABLA", type="secondary", use_container_width=True):
+                    # Combinamos lo editado con lo que ya estaba facturado anteriormente
+                    df_final_subida = pd.concat([df_f_hist, df_p_editado], ignore_index=True)
+                    
+                    hoja_trabajos.clear()
+                    # Re-subimos encabezados y datos
+                    headers = df_final_subida.columns.tolist()
+                    data_rows = df_final_subida.fillna("").astype(str).values.tolist()
+                    hoja_trabajos.append_rows([headers] + data_rows)
+                    
+                    obtener_trabajos.clear()
+                    st.success("¡Registros actualizados correctamente!")
+                    time.sleep(1)
+                    st.rerun()
             else:
-                st.info("Todos los trabajos han sido facturados.")
+                st.info("No hay trabajos pendientes.")
         else:
             st.info("No hay trabajos registrados.")
     else:
         st.warning("Añade clientes en el Directorio primero.")
 
-# --- PESTAÑA 2: GENERACIÓN DE FACTURA MENSUAL ---
+# --- PESTAÑA 2: GENERACIÓN DE FACTURA ---
 with tab2:
-    st.header("Generar Factura Consolidada")
+    st.header("GENERAR FACTURA CONSOLIDADA")
     trabajos_para_facturar = obtener_trabajos()
     
     if trabajos_para_facturar:
@@ -228,7 +196,10 @@ with tab2:
             clientes_pendientes = df_pendientes_f['Cliente'].unique().tolist()
             c_fac = st.selectbox("Seleccionar Cliente a Facturar", clientes_pendientes)
             
-            trabajos_cliente = df_pendientes_f[df_pendientes_f['Cliente'] == c_fac]
+            trabajos_cliente = df_pendientes_f[df_pendientes_f['Cliente'] == c_fac].copy()
+            # Asegurar que cantidad y precio sean numéricos para el cálculo
+            trabajos_cliente['Cantidad'] = pd.to_numeric(trabajos_cliente['Cantidad'], errors='coerce').fillna(0)
+            trabajos_cliente['Precio'] = pd.to_numeric(trabajos_cliente['Precio'], errors='coerce').fillna(0)
             trabajos_cliente['TotalFila'] = trabajos_cliente['Cantidad'] * trabajos_cliente['Precio']
             
             st.write(f"### Trabajos acumulados de {c_fac}")
@@ -248,14 +219,13 @@ with tab2:
                 cash_check = st.checkbox("Accept Cash/Check", value=True)
 
             st.divider()
-            st.write("### 🔒 Confirmación de Seguridad")
-            frase_secreta = st.text_input("Ingresa la frase de seguridad para habilitar el botón escriba: ELESVAN MI HIJO FAVORITO", placeholder="Escribe aquí...")
+            st.write("### 🔒 CONFIRMACIÓN DE SEGURIDAD")
+            frase_secreta = st.text_input("escriba: ELESVAN MI HIJO FAVORITO", placeholder="Escribe aquí...")
             
-            # --- VALIDACIÓN DE FRASE PARA ACTIVAR BOTÓN ---
             boton_activado = (frase_secreta == "ELESVAN MI HIJO FAVORITO")
             
-            if st.button("🚀 Emitir Factura Mensual", type="primary", use_container_width=True, disabled=not boton_activado):
-                with st.spinner("Compilando trabajos y creando PDF..."):
+            if st.button("🚀 EMITIR FACTURA MENSUAL", type="primary", use_container_width=True, disabled=not boton_activado):
+                with st.spinner("Creando PDF..."):
                     folio = f"FAC-{len(hoja_facturas.get_all_values()):04d}"
                     f_emision = datetime.date.today()
                     f_venc = f_emision + datetime.timedelta(days=5)
@@ -265,15 +235,12 @@ with tab2:
                     dir_cli = datos_cli.get('direccion', '')
                     tel_cli = datos_cli.get('telefono', '')
                     
-                    # --- PDF GENERATION ---
                     pdf = FPDF()
                     pdf.add_page()
                     if os.path.exists(PLANTILLA_IMG):
                         pdf.image(PLANTILLA_IMG, x=0, y=0, w=210, h=297)
                     
                     blue = (0, 102, 204)
-                    
-                    # Encabezado con Sitio Web
                     pdf.set_font("Helvetica", 'B', 14); pdf.set_text_color(*blue)
                     pdf.text(120, 25, "MIRANDA SERVICE")
                     pdf.set_font("Helvetica", '', 10); pdf.set_text_color(0,0,0)
@@ -282,7 +249,6 @@ with tab2:
                     pdf.set_font("Helvetica", 'B', 10); pdf.set_text_color(*blue)
                     pdf.text(120, 45, f"Web: {SITIO_WEB}")
 
-                    # Billed To
                     pdf.set_font("Helvetica", 'B', 11); pdf.set_text_color(*blue)
                     pdf.text(15, 60, "BILLED TO:")
                     pdf.text(120, 60, f"INVOICE #: {folio}")
@@ -296,7 +262,6 @@ with tab2:
                     pdf.set_text_color(200, 0, 0); pdf.text(120, 70, f"Due Date: {f_venc.strftime('%m/%d/%Y')}")
                     pdf.set_text_color(0, 0, 0)
 
-                    # Tabla
                     pdf.set_fill_color(*blue); pdf.set_text_color(255,255,255)
                     pdf.set_xy(10, 90)
                     pdf.cell(30, 8, "Date", 1, 0, 'C', True)
@@ -306,16 +271,14 @@ with tab2:
                     pdf.cell(35, 8, "Amount", 1, 1, 'C', True)
 
                     pdf.set_text_color(0,0,0); pdf.set_font("Helvetica", '', 10)
-                    
                     for index, row in trabajos_cliente.iterrows():
                         pdf.set_x(10)
                         pdf.cell(30, 7, str(row['Fecha']), 1, 0, 'C')
                         pdf.cell(75, 7, f" {row['Servicio']}", 1)
                         pdf.cell(15, 7, str(row['Cantidad']), 1, 0, 'C')
-                        pdf.cell(35, 7, f"${row['Precio']:,.2f}", 1, 0, 'C')
-                        pdf.cell(35, 7, f"${row['TotalFila']:,.2f}", 1, 1, 'C')
+                        pdf.cell(35, 7, f"${float(row['Precio']):,.2f}", 1, 0, 'C')
+                        pdf.cell(35, 7, f"${float(row['TotalFila']):,.2f}", 1, 1, 'C')
 
-                    # Totales
                     ty = pdf.get_y() + 8
                     pdf.set_font("Helvetica", 'B', 10)
                     pdf.text(140, ty, "Subtotal:")
@@ -327,26 +290,18 @@ with tab2:
                     pdf.text(140, ty+16, "TOTAL:")
                     pdf.text(175, ty+16, f"${total_due:,.2f}")
 
-                    # Pagos
                     pdf.set_font("Helvetica", 'B', 11); pdf.text(15, ty, "PAYMENT OPTIONS:")
                     pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", '', 9)
                     pm_y = ty + 6
                     if zelle_info: pdf.text(15, pm_y, f"Zelle: {zelle_info}"); pm_y += 5
                     if cash_check: pdf.text(15, pm_y, "Check: Payable to Miranda Service / Cash Accepted")
 
-                    # Pie de página con Sitio Web
-                    pdf.set_text_color(100, 100, 100); pdf.set_font("Helvetica", '', 8)
-                    footer_text = f"Thank you for choosing Miranda Service! Visit us at {SITIO_WEB}."
-                    pdf.set_xy(15, 255); pdf.multi_cell(180, 4, footer_text, align='C')
-
-                    # Guardar y Enviar
                     fname = f"{folio}_{c_fac.replace(' ','_')}.pdf"
                     pdf.output(fname)
                     
-                    # Registrar en Google Sheets (Solo 7 columnas)
                     hoja_facturas.append_row([folio, c_fac, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
                     
-                    # Actualizar estado de los Trabajos
+                    # Marcar trabajos como facturados en la nube
                     todas_filas_trabajos = hoja_trabajos.get_all_values()
                     for i, fila in enumerate(todas_filas_trabajos):
                         if i > 0 and fila[1] == c_fac and fila[6] == "Pendiente":
@@ -366,135 +321,89 @@ with tab2:
                                 s.login(CORREO_PAPA, PASSWORD_APP_GMAIL); s.send_message(msg)
                         except Exception as e: st.error(f"Error correo: {e}")
 
-                    st.success(f"Factura {folio} generada. Trabajos marcados como completados.")
-                    with open(fname, "rb") as f: st.download_button("📥 Descargar PDF", f, file_name=fname, type="primary")
-                    
-                    # Borrar archivo para no saturar el servidor
+                    st.success(f"Factura {folio} generada correctamente.")
+                    with open(fname, "rb") as f: st.download_button("📥 DESCARGAR PDF", f, file_name=fname, type="primary")
                     os.remove(fname)
         else:
-            st.success("🎉 No hay clientes con trabajos pendientes de facturar.")
-    else:
-        st.info("Registra trabajos en la primera pestaña para poder facturarlos.")
+            st.success("No hay trabajos pendientes para facturar.")
 
-# --- PESTAÑA 3: HISTORIAL Y FINANZAS INTERACTIVAS ---
+# --- PESTAÑA 3: FINANZAS ---
 with tab3:
-    st.subheader("Análisis Financiero")
+    st.header("ANÁLISIS FINANCIERO")
     data_f = obtener_facturas_records()
     if data_f:
         df_f = pd.DataFrame(data_f)
-        
-        st.write("### 📈 Resumen por Mes")
+        st.write("### Resumen Mensual")
         try:
-            col_fecha = df_f.columns[2] 
-            col_total = df_f.columns[4]
-            
             df_fin = df_f.copy()
-            df_fin['Valor_Num'] = df_fin[col_total].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False)
+            df_fin['Valor_Num'] = df_fin.iloc[:, 4].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False)
             df_fin['Valor_Num'] = pd.to_numeric(df_fin['Valor_Num'], errors='coerce').fillna(0)
-            df_fin['Mes'] = pd.to_datetime(df_fin[col_fecha], errors='coerce').dt.to_period('M')
+            df_fin['Mes'] = pd.to_datetime(df_fin.iloc[:, 2], errors='coerce').dt.to_period('M')
             
             resumen = df_fin.groupby(['Mes', 'Estado'])['Valor_Num'].sum().unstack(fill_value=0)
             if 'Pagado' not in resumen.columns: resumen['Pagado'] = 0.0
             if 'Pendiente' not in resumen.columns: resumen['Pendiente'] = 0.0
-            resumen['Total Generado'] = resumen['Pagado'] + resumen['Pendiente']
             
             meses_list = sorted(resumen.index.astype(str).tolist(), reverse=True)
             if meses_list:
-                mes_sel = st.selectbox("📅 Ver métricas de:", meses_list)
+                mes_sel = st.selectbox("Seleccionar Mes:", meses_list)
                 m_per = pd.Period(mes_sel, freq='M')
                 
                 m1, m2, m3 = st.columns(3)
-                m1.metric(f"💰 Cobrado ({mes_sel})", f"${resumen.loc[m_per, 'Pagado']:,.2f}")
-                m2.metric(f"⏳ Pendiente ({mes_sel})", f"${resumen.loc[m_per, 'Pendiente']:,.2f}")
-                m3.metric(f"📊 Total Bruto", f"${resumen.loc[m_per, 'Total Generado']:,.2f}")
-        except: st.warning("Datos insuficientes para finanzas.")
+                m1.metric("💰 Cobrado", f"${resumen.loc[m_per, 'Pagado']:,.2f}")
+                m2.metric("⏳ Pendiente", f"${resumen.loc[m_per, 'Pendiente']:,.2f}")
+                m3.metric("📊 Total", f"${(resumen.loc[m_per, 'Pagado'] + resumen.loc[m_per, 'Pendiente']):,.2f}")
+        except: st.warning("Error al procesar datos financieros.")
 
         st.divider()
-        st.write("### 🗂️ Registro General")
-        
-        if 'Ruta_PDF' in df_f.columns: df_f = df_f.drop(columns=['Ruta_PDF'])
-        st.dataframe(df_f, hide_index=True, use_container_width=True)
-        
-        st.divider()
-        st.write("### 🛠️ Acciones sobre Facturas")
-        c_p, c_r, c_b = st.columns(3)
-        pendientes = df_f[df_f["Estado"] == "Pendiente"]["Folio"].tolist()
-        pagadas = df_f[df_f["Estado"] == "Pagado"]["Folio"].tolist()
-        todas = df_f["Folio"].tolist()
-
-        with c_p:
-            if pendientes:
-                f_p = st.selectbox("Marcar Pagada:", pendientes, key="p_f")
-                if st.button("💰 Confirmar Pago", use_container_width=True):
-                    try:
-                        hoja_facturas.update_cell(hoja_facturas.find(f_p).row, 6, "Pagado")
-                        obtener_facturas_records.clear(); st.rerun()
-                    except: st.error("Error al actualizar la base de datos.")
-        with c_r:
-            if pagadas:
-                f_r = st.selectbox("Quitar Pagado:", pagadas, key="r_f")
-                if st.button("⏪ Revertir a Pendiente", use_container_width=True):
-                    try:
-                        hoja_facturas.update_cell(hoja_facturas.find(f_r).row, 6, "Pendiente")
-                        obtener_facturas_records.clear(); st.rerun()
-                    except: st.error("Error al actualizar la base de datos.")
-        with c_b:
-            if todas:
-                f_b = st.selectbox("Eliminar Factura:", todas, key="b_f")
-                if st.button("🗑️ Borrar Factura", type="primary", use_container_width=True):
-                    try:
-                        hoja_facturas.delete_rows(hoja_facturas.find(f_b).row)
-                        obtener_facturas_records.clear(); st.rerun()
-                    except: st.error("Error al borrar de la base de datos.")
+        st.write("### Acciones sobre Facturas")
+        todas = df_f.iloc[:, 0].tolist() if not df_f.empty else []
+        if todas:
+            f_sel = st.selectbox("Seleccionar Factura:", todas)
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button("✅ MARCAR COMO PAGADA", use_container_width=True):
+                    fila = hoja_facturas.find(f_sel).row
+                    hoja_facturas.update_cell(fila, 6, "Pagado")
+                    obtener_facturas_records.clear(); st.rerun()
+            with col_b2:
+                if st.button("🗑️ ELIMINAR FACTURA", type="primary", use_container_width=True):
+                    fila = hoja_facturas.find(f_sel).row
+                    hoja_facturas.delete_rows(fila)
+                    obtener_facturas_records.clear(); st.rerun()
     else: st.info("No hay facturas registradas.")
 
-
-# --- PESTAÑA 4: DIRECTORIO (CRUD ESTILO HOJA DE CÁLCULO) ---
+# --- PESTAÑA 4: DIRECTORIO ---
 with tab4:
-    st.header("🗂️ Gestión de Directorio Interactivo")
-    st.info("💡 **Instrucciones:** edita cualquier celda haciendo doble clic (nombre, correo, dirección o teléfono). al terminar, presiona el botón guardar para actualizar la base de datos.")
+    st.header("GESTIÓN DE DIRECTORIO")
+    st.info("💡 instruccion: edita directamente en la tabla (doble clic). al terminar pulsa el boton guardar.")
     
     col_c, col_s = st.columns([2, 1])
     
     with col_c:
         st.subheader("👥 Clientes")
         registros_clientes = hoja_clientes.get_all_records()
-        if registros_clientes:
-            df_cl = pd.DataFrame(registros_clientes).astype(str)
-        else:
-            df_cl = pd.DataFrame(columns=["Nombre", "Correo", "Direccion", "Telefono"])
-            
-        df_cl_edit = st.data_editor(
-            df_cl, 
-            num_rows="dynamic", 
-            use_container_width=True, 
-            key="edit_cli_full"
-        )
+        df_cl = pd.DataFrame(registros_clientes).astype(str) if registros_clientes else pd.DataFrame(columns=["Nombre", "Correo", "Direccion", "Telefono"])
+        df_cl_edit = st.data_editor(df_cl, num_rows="dynamic", use_container_width=True, key="edit_cli_full")
         
-        if st.button("💾 Guardar Cambios en Clientes", type="primary", use_container_width=True):
+        if st.button("💾 GUARDAR CLIENTES", type="primary", use_container_width=True):
             hoja_clientes.clear()
             datos_nuevos = [df_cl_edit.columns.tolist()] + df_cl_edit.fillna("").values.tolist()
             hoja_clientes.append_rows(datos_nuevos)
             obtener_clientes.clear()
-            st.success("¡Directorio actualizado!")
-            time.sleep(1)
-            st.rerun()
+            st.success("Directorio actualizado.")
+            time.sleep(1); st.rerun()
 
     with col_s:
         st.subheader("🛠️ Servicios")
         registros_servicios = hoja_servicios.get_all_records()
-        if registros_servicios:
-            df_srv = pd.DataFrame(registros_servicios)
-        else:
-            df_srv = pd.DataFrame(columns=["Servicio", "Precio"])
-            
+        df_srv = pd.DataFrame(registros_servicios) if registros_servicios else pd.DataFrame(columns=["Servicio", "Precio"])
         df_srv_edit = st.data_editor(df_srv, num_rows="dynamic", use_container_width=True, key="edit_srv")
         
-        if st.button("💾 Guardar Precios y Servicios", type="primary", use_container_width=True):
+        if st.button("💾 GUARDAR SERVICIOS", type="primary", use_container_width=True):
             hoja_servicios.clear()
             datos_nuevos = [df_srv_edit.columns.tolist()] + df_srv_edit.fillna("").values.tolist()
             hoja_servicios.append_rows(datos_nuevos)
             obtener_servicios.clear()
-            st.success("¡Servicios actualizados!")
-            time.sleep(1)
-            st.rerun()
+            st.success("Servicios actualizados.")
+            time.sleep(1); st.rerun()
