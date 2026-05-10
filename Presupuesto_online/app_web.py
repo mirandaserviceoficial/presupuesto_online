@@ -140,28 +140,33 @@ with tab1:
                 
         st.divider()
         st.subheader("TRABAJOS ACUMULADOS (SIN FACTURAR)")
-        st.info("💡 instruccion: edita directamente en la tabla (doble clic). puedes borrar filas seleccionandolas. al terminar pulsa el boton guardar.")
+        st.info("💡 instruccion: edita directamente en la tabla (doble clic). al terminar pulsa el boton guardar.")
         
         todos_los_trabajos = obtener_trabajos()
         if todos_los_trabajos:
             df_total = pd.DataFrame(todos_los_trabajos)
-            # Editor interactivo para los pendientes con candados de seguridad
+            # SEPARAMOS LOS PENDIENTES PARA EDITARLOS
+            df_p = df_total[df_total['Estado'] == 'Pendiente'].copy()
+            df_f_hist = df_total[df_total['Estado'] != 'Pendiente'].copy()
+
+            if not df_p.empty:
+                # Editor interactivo con bloqueos de seguridad
                 df_p_editado = st.data_editor(
                     df_p, 
-                    num_rows="fixed",  # <--- Evita que se creen nuevos trabajos desde la tabla
+                    num_rows="fixed", 
                     use_container_width=True, 
                     key="editor_trabajos_pendientes",
                     column_config={
                         "ID": st.column_config.TextColumn("ID", disabled=True),
-                        "Estado": st.column_config.TextColumn("Estado", disabled=True), # <--- Bloquea la edición
+                        "Estado": st.column_config.TextColumn("Estado", disabled=True),
                         "Cliente": st.column_config.SelectboxColumn(
                             "Cliente", 
-                            options=list(clientes_db.keys()), # <--- Desplegable con tus clientes
+                            options=list(clientes_db.keys()),
                             required=True
                         ),
                         "Servicio": st.column_config.SelectboxColumn(
                             "Servicio", 
-                            options=list(servicios_db.keys()) # <--- Desplegable con tus servicios
+                            options=list(servicios_db.keys())
                         ),
                         "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=1),
                         "Precio": st.column_config.NumberColumn("Precio", min_value=0.0)
@@ -169,11 +174,10 @@ with tab1:
                 )
                 
                 if st.button("💾 GUARDAR CAMBIOS EN TABLA", type="secondary", use_container_width=True):
-                    # Combinamos lo editado con lo que ya estaba facturado anteriormente
+                    # Combinar lo editado con el historial intacto
                     df_final_subida = pd.concat([df_f_hist, df_p_editado], ignore_index=True)
                     
                     hoja_trabajos.clear()
-                    # Re-subimos encabezados y datos
                     headers = df_final_subida.columns.tolist()
                     data_rows = df_final_subida.fillna("").astype(str).values.tolist()
                     hoja_trabajos.append_rows([headers] + data_rows)
@@ -203,7 +207,6 @@ with tab2:
             c_fac = st.selectbox("Seleccionar Cliente a Facturar", clientes_pendientes)
             
             trabajos_cliente = df_pendientes_f[df_pendientes_f['Cliente'] == c_fac].copy()
-            # Asegurar que cantidad y precio sean numéricos para el cálculo
             trabajos_cliente['Cantidad'] = pd.to_numeric(trabajos_cliente['Cantidad'], errors='coerce').fillna(0)
             trabajos_cliente['Precio'] = pd.to_numeric(trabajos_cliente['Precio'], errors='coerce').fillna(0)
             trabajos_cliente['TotalFila'] = trabajos_cliente['Cantidad'] * trabajos_cliente['Precio']
@@ -307,7 +310,6 @@ with tab2:
                     
                     hoja_facturas.append_row([folio, c_fac, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
                     
-                    # Marcar trabajos como facturados en la nube
                     todas_filas_trabajos = hoja_trabajos.get_all_values()
                     for i, fila in enumerate(todas_filas_trabajos):
                         if i > 0 and fila[1] == c_fac and fila[6] == "Pendiente":
