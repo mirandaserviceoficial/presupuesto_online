@@ -158,7 +158,7 @@ with tab1:
                     key="editor_trabajos_pendientes",
                     column_config={
                         "ID": st.column_config.TextColumn("ID", disabled=True),
-                        "Estado": st.column_config.SelectColumn("Estado", options=["Pendiente", "Facturado"])
+                        "Estado": st.column_config.SelectboxColumn("Estado", options=["Pendiente", "Facturado"])
                     }
                 )
                 
