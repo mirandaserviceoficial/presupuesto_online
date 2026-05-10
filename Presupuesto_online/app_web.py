@@ -158,7 +158,7 @@ with tab1:
                 df_pendientes['ID'] = df_pendientes['ID'].astype(str)
                 opciones_tr = df_pendientes.apply(lambda x: f"{x['ID']} | {x['Cliente']} - {x['Fecha']} - {x['Servicio']}", axis=1).tolist()
                 
-                tr_sel = st.selectbox("Selecciona un trabajo para modificar:", opciones_tr)
+                tr_sel = st.selectbox("Selecciona un registro para modificar:", opciones_tr)
                 
                 if tr_sel:
                     id_target = tr_sel.split(" | ")[0].strip()
@@ -166,21 +166,33 @@ with tab1:
                     
                     col_e1, col_e2 = st.columns([2, 1])
                     with col_e1:
-                        with st.form("form_edit_tr"):
-                            st.write("**Modificar datos:**")
-                            n_f = st.date_input("Fecha", pd.to_datetime(datos_tr['Fecha']).date())
-                            n_s = st.text_input("Servicio", value=datos_tr['Servicio'])
-                            n_c = st.number_input("Cantidad", min_value=1, value=int(datos_tr['Cantidad']))
-                            n_p = st.number_input("Precio ($)", min_value=0.0, value=float(datos_tr['Precio']))
+                        with st.form("form_edit_tr_v2"):
+                            st.write("**Modificar información del trabajo:**")
                             
-                            if st.form_submit_button("Actualizar Trabajo"):
+                            try:
+                                index_cliente_actual = list(clientes_db.keys()).index(datos_tr['Cliente'])
+                            except ValueError:
+                                index_cliente_actual = 0
+                                
+                            nuevo_cliente = st.selectbox("Cliente", list(clientes_db.keys()), index=index_cliente_actual)
+                            nueva_fecha = st.date_input("Fecha", pd.to_datetime(datos_tr['Fecha']).date())
+                            nuevo_servicio = st.text_input("Servicio", value=datos_tr['Servicio'])
+                            nueva_cantidad = st.number_input("Cantidad", min_value=1, value=int(datos_tr['Cantidad']))
+                            nuevo_precio = st.number_input("Precio ($)", min_value=0.0, value=float(datos_tr['Precio']))
+                            
+                            if st.form_submit_button("Actualizar Registro"):
                                 try:
                                     cell = hoja_trabajos.find(id_target)
-                                    hoja_trabajos.update_cell(cell.row, 3, str(n_f))
-                                    hoja_trabajos.update_cell(cell.row, 4, n_s)
-                                    hoja_trabajos.update_cell(cell.row, 5, n_c)
-                                    hoja_trabajos.update_cell(cell.row, 6, n_p)
+                                    fila = cell.row
+                                    hoja_trabajos.update_cell(fila, 2, nuevo_cliente)
+                                    hoja_trabajos.update_cell(fila, 3, str(nueva_fecha))
+                                    hoja_trabajos.update_cell(fila, 4, nuevo_servicio)
+                                    hoja_trabajos.update_cell(fila, 5, nueva_cantidad)
+                                    hoja_trabajos.update_cell(fila, 6, nuevo_precio)
+                                    
                                     obtener_trabajos.clear()
+                                    st.success("Trabajo actualizado correctamente.")
+                                    time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
                                     st.error("Error al actualizar en la nube. Inténtalo de nuevo.")
@@ -439,48 +451,45 @@ with tab3:
 
 # --- PESTAÑA 4: DIRECTORIO (CRUD ESTILO HOJA DE CÁLCULO) ---
 with tab4:
-    st.header("🗂️ Gestión de Directorio interactivo")
-    st.info("💡 **Instrucciones:** Edita directamente en las tablas haciendo doble clic en las celdas. Puedes añadir nuevas filas abajo o seleccionarlas a la izquierda para presionar 'suprimir' (borrar). Al terminar, no olvides presionar el botón de guardar correspondiente.")
+    st.header("🗂️ Gestión de Directorio Interactivo")
+    st.info("💡 **Instrucciones:** edita cualquier celda haciendo doble clic (nombre, correo, dirección o teléfono). al terminar, presiona el botón guardar para actualizar la base de datos.")
     
     col_c, col_s = st.columns([2, 1])
     
     with col_c:
         st.subheader("👥 Clientes")
-        # Obtener los datos como DataFrame
         registros_clientes = hoja_clientes.get_all_records()
         if registros_clientes:
-            df_cl = pd.DataFrame(registros_clientes)
+            df_cl = pd.DataFrame(registros_clientes).astype(str)
         else:
             df_cl = pd.DataFrame(columns=["Nombre", "Correo", "Direccion", "Telefono"])
             
-        # Data Editor (La magia de editar como Excel)
-        df_cl_edit = st.data_editor(df_cl, num_rows="dynamic", use_container_width=True, key="edit_cli")
+        df_cl_edit = st.data_editor(
+            df_cl, 
+            num_rows="dynamic", 
+            use_container_width=True, 
+            key="edit_cli_full"
+        )
         
-        # Botón para empujar cambios a Google Sheets
-        if st.button("💾 Guardar Directorio de Clientes", type="primary", use_container_width=True):
-            # Limpiamos la hoja y re-escribimos todo el dataframe
+        if st.button("💾 Guardar Cambios en Clientes", type="primary", use_container_width=True):
             hoja_clientes.clear()
-            # Combinamos las cabeceras con los datos para subirlos
-            datos_nuevos = [df_cl_edit.columns.tolist()] + df_cl_edit.fillna("").astype(str).values.tolist()
+            datos_nuevos = [df_cl_edit.columns.tolist()] + df_cl_edit.fillna("").values.tolist()
             hoja_clientes.append_rows(datos_nuevos)
             obtener_clientes.clear()
-            st.success("¡Directorio de clientes actualizado!")
+            st.success("¡Directorio actualizado!")
             time.sleep(1)
             st.rerun()
 
     with col_s:
         st.subheader("🛠️ Servicios")
-        # Obtener los datos como DataFrame
         registros_servicios = hoja_servicios.get_all_records()
         if registros_servicios:
             df_srv = pd.DataFrame(registros_servicios)
         else:
             df_srv = pd.DataFrame(columns=["Servicio", "Precio"])
             
-        # Data Editor (La magia de editar como Excel)
         df_srv_edit = st.data_editor(df_srv, num_rows="dynamic", use_container_width=True, key="edit_srv")
         
-        # Botón para empujar cambios a Google Sheets
         if st.button("💾 Guardar Precios y Servicios", type="primary", use_container_width=True):
             hoja_servicios.clear()
             datos_nuevos = [df_srv_edit.columns.tolist()] + df_srv_edit.fillna("").values.tolist()
