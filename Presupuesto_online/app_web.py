@@ -384,6 +384,12 @@ with tab3:
         except: st.warning("Error al procesar datos financieros. Verifica la estructura de la base de datos.")
 
         st.divider()
+        st.write("### 🗂️ Registro General de Facturas")
+        # Mostrar la tabla, ocultando la columna de Archivo para que se vea más limpio
+        df_mostrar = df_f.drop(columns=["Archivo"]) if "Archivo" in df_f.columns else df_f
+        st.dataframe(df_mostrar, hide_index=True, use_container_width=True)
+
+        st.divider()
         st.write("### Acciones sobre Facturas")
         todas = df_f.iloc[:, 0].tolist() if not df_f.empty else []
         if todas:
