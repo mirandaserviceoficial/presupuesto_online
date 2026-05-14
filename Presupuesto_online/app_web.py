@@ -41,23 +41,35 @@ def conectar_servicios():
     sheet = client.open("Miranda_DB")
     return sheet
 
+# --- INICIALIZACIÓN AUTÓNOMA DE BASES DE DATOS ---
 try:
     db = conectar_servicios()
-    hoja_clientes = db.worksheet("Clientes")
-    hoja_servicios = db.worksheet("Servicios")
-    hoja_facturas = db.worksheet("Facturas")
     
-    try:
-        hoja_trabajos = db.worksheet("Trabajos")
-    except gspread.exceptions.WorksheetNotFound:
-        hoja_trabajos = db.add_worksheet(title="Trabajos", rows="1000", cols="7")
-        hoja_trabajos.append_row(["ID", "Cliente", "Fecha", "Servicio", "Cantidad", "Precio", "Estado"])
-        
+    # Conexión o creación de Clientes
+    try: hoja_clientes = db.worksheet("Clientes")
+    except: hoja_clientes = db.add_worksheet(title="Clientes", rows="100", cols="4")
+    if not hoja_clientes.get_all_values(): hoja_clientes.append_row(["Nombre", "Correo", "Direccion", "Telefono"])
+
+    # Conexión o creación de Servicios
+    try: hoja_servicios = db.worksheet("Servicios")
+    except: hoja_servicios = db.add_worksheet(title="Servicios", rows="50", cols="2")
+    if not hoja_servicios.get_all_values(): hoja_servicios.append_row(["Servicio", "Precio"])
+
+    # Conexión o creación de Facturas
+    try: hoja_facturas = db.worksheet("Facturas")
+    except: hoja_facturas = db.add_worksheet(title="Facturas", rows="1000", cols="7")
+    if not hoja_facturas.get_all_values(): hoja_facturas.append_row(["Folio", "Cliente", "Fecha", "Vencimiento", "Total", "Estado", "Archivo"])
+    
+    # Conexión o creación de Trabajos
+    try: hoja_trabajos = db.worksheet("Trabajos")
+    except: hoja_trabajos = db.add_worksheet(title="Trabajos", rows="1000", cols="7")
+    if not hoja_trabajos.get_all_values(): hoja_trabajos.append_row(["ID", "Cliente", "Fecha", "Servicio", "Cantidad", "Precio", "Estado"])
+
 except Exception as e:
     st.error(f"Error de conexión: {e}")
     st.stop()
 
-# --- FUNCIONES DE BASE DE DATOS ---
+# --- FUNCIONES DE LECTURA (CON CACHÉ) ---
 @st.cache_data(ttl=600)
 def obtener_clientes():
     for intento in range(3):
@@ -140,19 +152,24 @@ with tab1:
                 
         st.divider()
         st.subheader("TRABAJOS ACUMULADOS (SIN FACTURAR)")
-        st.info("💡 instruccion: edita directamente en la tabla (doble clic). al terminar pulsa el boton guardar. usa el botón ❌ para eliminar trabajos.")
+        st.info("💡 instruccion: edita directamente en la tabla (doble clic). al terminar pulsa el boton guardar.")
         
         todos_los_trabajos = obtener_trabajos()
         if todos_los_trabajos:
             df_total = pd.DataFrame(todos_los_trabajos)
+            
             # SEPARAMOS LOS PENDIENTES PARA EDITARLOS
             df_p = df_total[df_total['Estado'] == 'Pendiente'].copy()
             df_f_hist = df_total[df_total['Estado'] != 'Pendiente'].copy()
 
             if not df_p.empty:
-                # Agregar columna temporal para checkbox de eliminación
-                df_p['Eliminar'] = False
+                # LIMPIEZA DE ESPACIOS FANTASMAS (Evita el bloqueo de celdas)
+                df_p['Cliente'] = df_p['Cliente'].astype(str).str.strip()
+                df_p['Servicio'] = df_p['Servicio'].astype(str).str.strip()
                 
+                lista_clientes_limpia = [str(k).strip() for k in clientes_db.keys()]
+                lista_servicios_limpia = [str(k).strip() for k in servicios_db.keys()]
+
                 # Editor interactivo con bloqueos de seguridad
                 df_p_editado = st.data_editor(
                     df_p, 
@@ -164,43 +181,31 @@ with tab1:
                         "Estado": st.column_config.TextColumn("Estado", disabled=True),
                         "Cliente": st.column_config.SelectboxColumn(
                             "Cliente", 
-                            options=list(clientes_db.keys()),
+                            options=lista_clientes_limpia,
                             required=True
                         ),
                         "Servicio": st.column_config.SelectboxColumn(
                             "Servicio", 
-                            options=list(servicios_db.keys())
+                            options=lista_servicios_limpia
                         ),
                         "Cantidad": st.column_config.NumberColumn("Cantidad", min_value=1),
-                        "Precio": st.column_config.NumberColumn("Precio", min_value=0.0),
-                        "Eliminar": st.column_config.CheckboxColumn("❌ Eliminar", help="Marca para eliminar este trabajo")
+                        "Precio": st.column_config.NumberColumn("Precio", min_value=0.0)
                     }
                 )
                 
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("💾 GUARDAR CAMBIOS EN TABLA", type="secondary", use_container_width=True):
-                        # Filtrar solo los que NO están marcados para eliminar
-                        df_p_guardar = df_p_editado[df_p_editado['Eliminar'] == False].copy()
-                        df_p_guardar = df_p_guardar.drop('Eliminar', axis=1)
-                        
-                        # Combinar lo editado con el historial intacto
-                        df_final_subida = pd.concat([df_f_hist, df_p_guardar], ignore_index=True)
-                        
-                        hoja_trabajos.clear()
-                        headers = df_final_subida.columns.tolist()
-                        data_rows = df_final_subida.fillna("").astype(str).values.tolist()
-                        hoja_trabajos.append_rows([headers] + data_rows)
-                        
-                        obtener_trabajos.clear()
-                        st.success("¡Registros actualizados correctamente!")
-                        time.sleep(1)
-                        st.rerun()
-                
-                with col_btn2:
-                    filas_a_eliminar = df_p_editado[df_p_editado['Eliminar'] == True]
-                    if len(filas_a_eliminar) > 0:
-                        st.warning(f"⚠️ {len(filas_a_eliminar)} trabajo(s) marcado(s) para eliminar")
+                if st.button("💾 GUARDAR CAMBIOS EN TABLA", type="secondary", use_container_width=True):
+                    # Combinar lo editado con el historial intacto
+                    df_final_subida = pd.concat([df_f_hist, df_p_editado], ignore_index=True)
+                    
+                    hoja_trabajos.clear()
+                    headers = df_final_subida.columns.tolist()
+                    data_rows = df_final_subida.fillna("").astype(str).values.tolist()
+                    hoja_trabajos.append_rows([headers] + data_rows)
+                    
+                    obtener_trabajos.clear()
+                    st.success("¡Registros actualizados correctamente!")
+                    time.sleep(1)
+                    st.rerun()
             else:
                 st.info("No hay trabajos pendientes.")
         else:
@@ -244,7 +249,7 @@ with tab2:
 
             st.divider()
             st.write("### 🔒 CONFIRMACIÓN DE SEGURIDAD")
-            frase_secreta = st.text_input("password:", placeholder="Escribe aquí...")
+            frase_secreta = st.text_input("escriba: ELESVAN MI HIJO FAVORITO", placeholder="Escribe aquí...")
             
             boton_activado = (frase_secreta == "ELESVAN MI HIJO FAVORITO")
             
@@ -376,62 +381,7 @@ with tab3:
                 m1.metric("💰 Cobrado", f"${resumen.loc[m_per, 'Pagado']:,.2f}")
                 m2.metric("⏳ Pendiente", f"${resumen.loc[m_per, 'Pendiente']:,.2f}")
                 m3.metric("📊 Total", f"${(resumen.loc[m_per, 'Pagado'] + resumen.loc[m_per, 'Pendiente']):,.2f}")
-        except: st.warning("Error al procesar datos financieros.")
-
-        st.divider()
-        st.write("### 📋 Todas las Facturas por Mes")
-        
-        try:
-            # Preparar datos para tabla detallada
-            df_detalle = df_f.copy()
-            df_detalle['Valor_Num'] = df_detalle.iloc[:, 4].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False)
-            df_detalle['Valor_Num'] = pd.to_numeric(df_detalle['Valor_Num'], errors='coerce').fillna(0)
-            df_detalle['Fecha_Parsed'] = pd.to_datetime(df_detalle.iloc[:, 2], errors='coerce')
-            df_detalle['Mes'] = df_detalle['Fecha_Parsed'].dt.to_period('M')
-            
-            meses_disponibles = sorted(df_detalle['Mes'].dropna().unique(), reverse=True)
-            
-            if meses_disponibles:
-                mes_filtro = st.selectbox("Filtrar por Mes:", [str(m) for m in meses_disponibles], key="mes_filtro_detalle")
-                
-                # Filtrar por mes seleccionado
-                df_mes = df_detalle[df_detalle['Mes'].astype(str) == mes_filtro].copy()
-                
-                if not df_mes.empty:
-                    # Crear tabla visual mejorada
-                    df_tabla = df_mes[[df_mes.columns[0], df_mes.columns[1], df_mes.columns[2], df_mes.columns[4], df_mes.columns[5]]].copy()
-                    df_tabla.columns = ["Factura", "Cliente", "Fecha Emisión", "Monto", "Estado"]
-                    
-                    # Función para colorear según estado
-                    def colorear_estado(estado):
-                        if "Pagado" in str(estado):
-                            return "background-color: #d4edda; color: #155724;"  # Verde
-                        else:
-                            return "background-color: #fff3cd; color: #856404;"  # Amarillo
-                    
-                    # Aplicar estilos
-                    styled_df = df_tabla.style.map(
-                        lambda x: colorear_estado(x) if x.name == "Estado" else "",
-                        subset=["Estado"]
-                    )
-                    
-                    # Mostrar tabla
-                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
-                    
-                    # Mostrar totales del mes
-                    total_pagado = df_mes[df_mes.iloc[:, 5] == "Pagado"]["Valor_Num"].sum()
-                    total_pendiente = df_mes[df_mes.iloc[:, 5] == "Pendiente"]["Valor_Num"].sum()
-                    
-                    col_tot1, col_tot2, col_tot3 = st.columns(3)
-                    col_tot1.metric("✅ Pagado", f"${total_pagado:,.2f}")
-                    col_tot2.metric("⏳ Pendiente", f"${total_pendiente:,.2f}")
-                    col_tot3.metric("📊 Total Mes", f"${(total_pagado + total_pendiente):,.2f}")
-                else:
-                    st.info("No hay facturas para el mes seleccionado.")
-            else:
-                st.warning("No hay datos de facturas disponibles.")
-        except Exception as e:
-            st.error(f"Error al procesar tabla de facturas: {e}")
+        except: st.warning("Error al procesar datos financieros. Verifica la estructura de la base de datos.")
 
         st.divider()
         st.write("### Acciones sobre Facturas")
