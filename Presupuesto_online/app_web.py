@@ -1,3 +1,8 @@
+Aquí tienes el código completo, limpio de espacios ocultos, con las fechas totalmente estandarizadas a `MM/DD/YYYY` en todo el sistema y la protección `WorksheetNotFound` implementada para que no te vuelva a saltar el Error 400.
+
+Copia este bloque y reemplaza todo tu archivo `app.py`:
+
+```python
 import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -47,22 +52,22 @@ try:
     
     # Conexión o creación de Clientes
     try: hoja_clientes = db.worksheet("Clientes")
-    except: hoja_clientes = db.add_worksheet(title="Clientes", rows="100", cols="4")
+    except gspread.exceptions.WorksheetNotFound: hoja_clientes = db.add_worksheet(title="Clientes", rows="100", cols="4")
     if not hoja_clientes.get_all_values(): hoja_clientes.append_row(["Nombre", "Correo", "Direccion", "Telefono"])
 
     # Conexión o creación de Servicios
     try: hoja_servicios = db.worksheet("Servicios")
-    except: hoja_servicios = db.add_worksheet(title="Servicios", rows="50", cols="2")
+    except gspread.exceptions.WorksheetNotFound: hoja_servicios = db.add_worksheet(title="Servicios", rows="50", cols="2")
     if not hoja_servicios.get_all_values(): hoja_servicios.append_row(["Servicio", "Precio"])
 
     # Conexión o creación de Facturas
     try: hoja_facturas = db.worksheet("Facturas")
-    except: hoja_facturas = db.add_worksheet(title="Facturas", rows="1000", cols="7")
+    except gspread.exceptions.WorksheetNotFound: hoja_facturas = db.add_worksheet(title="Facturas", rows="1000", cols="7")
     if not hoja_facturas.get_all_values(): hoja_facturas.append_row(["Folio", "Cliente", "Fecha", "Vencimiento", "Total", "Estado", "Archivo"])
     
     # Conexión o creación de Trabajos
     try: hoja_trabajos = db.worksheet("Trabajos")
-    except: hoja_trabajos = db.add_worksheet(title="Trabajos", rows="1000", cols="7")
+    except gspread.exceptions.WorksheetNotFound: hoja_trabajos = db.add_worksheet(title="Trabajos", rows="1000", cols="7")
     if not hoja_trabajos.get_all_values(): hoja_trabajos.append_row(["ID", "Cliente", "Fecha", "Servicio", "Cantidad", "Precio", "Estado"])
 
 except Exception as e:
@@ -132,7 +137,7 @@ with tab1:
             st.session_state.num_precio_reg = float(servicios_db.get(servicio_actual, 0.0))
 
         c_reg = st.selectbox("Seleccionar Cliente", list(clientes_db.keys()), key="select_cli_reg")
-        f_reg = st.date_input("Fecha del Servicio", datetime.date.today(), key="date_reg")
+        f_reg = st.date_input("Fecha del Servicio", datetime.date.today(), key="date_reg", format="MM/DD/YYYY")
         
         c1, c2, c3 = st.columns([3, 1, 1])
         with c1: 
@@ -144,33 +149,32 @@ with tab1:
         
         if st.button("💾 GUARDAR TRABAJO", type="primary", use_container_width=True):
             id_trabajo = str(int(time.time())) 
-            hoja_trabajos.append_row([id_trabajo, c_reg, str(f_reg), s_reg, cant_reg, p_reg, "Pendiente"])
+            fecha_formateada = f_reg.strftime("%m/%d/%Y")
+            hoja_trabajos.append_row([id_trabajo, c_reg, fecha_formateada, s_reg, cant_reg, p_reg, "Pendiente"])
             obtener_trabajos.clear()
-            st.success(f"Trabajo guardado exitosamente para {c_reg}.")
+            st.success(f"trabajo guardado exitosamente para {c_reg}.")
             time.sleep(1)
             st.rerun()
                 
         st.divider()
         st.subheader("TRABAJOS ACUMULADOS (SIN FACTURAR)")
-        st.info("💡 instruccion: edita directamente en la tabla (doble clic). al terminar pulsa el boton guardar.")
+        st.info("💡 instrucción: edita directamente en la tabla (doble clic). al terminar pulsa el botón guardar.")
         
         todos_los_trabajos = obtener_trabajos()
         if todos_los_trabajos:
             df_total = pd.DataFrame(todos_los_trabajos)
             
-            # SEPARAMOS LOS PENDIENTES PARA EDITARLOS
             df_p = df_total[df_total['Estado'] == 'Pendiente'].copy()
             df_f_hist = df_total[df_total['Estado'] != 'Pendiente'].copy()
 
             if not df_p.empty:
-                # LIMPIEZA DE ESPACIOS FANTASMAS (Evita el bloqueo de celdas)
                 df_p['Cliente'] = df_p['Cliente'].astype(str).str.strip()
                 df_p['Servicio'] = df_p['Servicio'].astype(str).str.strip()
+                df_p['Fecha'] = pd.to_datetime(df_p['Fecha'], errors='coerce').dt.date
                 
                 lista_clientes_limpia = [str(k).strip() for k in clientes_db.keys()]
                 lista_servicios_limpia = [str(k).strip() for k in servicios_db.keys()]
 
-                # Editor interactivo con bloqueos de seguridad
                 df_p_editado = st.data_editor(
                     df_p, 
                     num_rows="fixed", 
@@ -184,6 +188,7 @@ with tab1:
                             options=lista_clientes_limpia,
                             required=True
                         ),
+                        "Fecha": st.column_config.DateColumn("Fecha", format="MM/DD/YYYY"),
                         "Servicio": st.column_config.SelectboxColumn(
                             "Servicio", 
                             options=lista_servicios_limpia
@@ -194,7 +199,7 @@ with tab1:
                 )
                 
                 if st.button("💾 GUARDAR CAMBIOS EN TABLA", type="secondary", use_container_width=True):
-                    # Combinar lo editado con el historial intacto
+                    df_p_editado['Fecha'] = pd.to_datetime(df_p_editado['Fecha']).dt.strftime('%m/%d/%Y')
                     df_final_subida = pd.concat([df_f_hist, df_p_editado], ignore_index=True)
                     
                     hoja_trabajos.clear()
@@ -203,15 +208,15 @@ with tab1:
                     hoja_trabajos.append_rows([headers] + data_rows)
                     
                     obtener_trabajos.clear()
-                    st.success("¡Registros actualizados correctamente!")
+                    st.success("¡registros actualizados correctamente!")
                     time.sleep(1)
                     st.rerun()
             else:
-                st.info("No hay trabajos pendientes.")
+                st.info("no hay trabajos pendientes.")
         else:
-            st.info("No hay trabajos registrados.")
+            st.info("no hay trabajos registrados.")
     else:
-        st.warning("Añade clientes en el Directorio primero.")
+        st.warning("añade clientes en el directorio primero.")
 
 # --- PESTAÑA 2: GENERACIÓN DE FACTURA ---
 with tab2:
@@ -249,7 +254,7 @@ with tab2:
 
             st.divider()
             st.write("### 🔒 CONFIRMACIÓN DE SEGURIDAD")
-            frase_secreta = st.text_input("escriba: ELESVAN MI HIJO FAVORITO", placeholder="Escribe aquí...")
+            frase_secreta = st.text_input("escriba: ELESVAN MI HIJO FAVORITO", placeholder="escribe aquí...")
             
             boton_activado = (frase_secreta == "ELESVAN MI HIJO FAVORITO")
             
@@ -302,7 +307,11 @@ with tab2:
                     pdf.set_text_color(0,0,0); pdf.set_font("Helvetica", '', 10)
                     for index, row in trabajos_cliente.iterrows():
                         pdf.set_x(10)
-                        pdf.cell(30, 7, str(row['Fecha']), 1, 0, 'C')
+                        
+                        fecha_val = pd.to_datetime(row['Fecha'], errors='coerce')
+                        fecha_imprimir = fecha_val.strftime('%m/%d/%Y') if pd.notna(fecha_val) else str(row['Fecha'])
+                        
+                        pdf.cell(30, 7, fecha_imprimir, 1, 0, 'C')
                         pdf.cell(75, 7, f" {row['Servicio']}", 1)
                         pdf.cell(15, 7, str(row['Cantidad']), 1, 0, 'C')
                         pdf.cell(35, 7, f"${float(row['Precio']):,.2f}", 1, 0, 'C')
@@ -328,7 +337,7 @@ with tab2:
                     fname = f"{folio}_{c_fac.replace(' ','_')}.pdf"
                     pdf.output(fname)
                     
-                    hoja_facturas.append_row([folio, c_fac, str(f_emision), str(f_venc), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
+                    hoja_facturas.append_row([folio, c_fac, f_emision.strftime("%m/%d/%Y"), f_venc.strftime("%m/%d/%Y"), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
                     
                     todas_filas_trabajos = hoja_trabajos.get_all_values()
                     for i, fila in enumerate(todas_filas_trabajos):
@@ -347,13 +356,13 @@ with tab2:
                             with open(fname, 'rb') as f: msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=fname)
                             with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
                                 s.login(CORREO_PAPA, PASSWORD_APP_GMAIL); s.send_message(msg)
-                        except Exception as e: st.error(f"Error correo: {e}")
+                        except Exception as e: st.error(f"error correo: {e}")
 
-                    st.success(f"Factura {folio} generada correctamente.")
+                    st.success(f"factura {folio} generada correctamente.")
                     with open(fname, "rb") as f: st.download_button("📥 DESCARGAR PDF", f, file_name=fname, type="primary")
                     os.remove(fname)
         else:
-            st.success("No hay trabajos pendientes para facturar.")
+            st.success("no hay trabajos pendientes para facturar.")
 
 # --- PESTAÑA 3: FINANZAS ---
 with tab3:
@@ -381,11 +390,10 @@ with tab3:
                 m1.metric("💰 Cobrado", f"${resumen.loc[m_per, 'Pagado']:,.2f}")
                 m2.metric("⏳ Pendiente", f"${resumen.loc[m_per, 'Pendiente']:,.2f}")
                 m3.metric("📊 Total", f"${(resumen.loc[m_per, 'Pagado'] + resumen.loc[m_per, 'Pendiente']):,.2f}")
-        except: st.warning("Error al procesar datos financieros. Verifica la estructura de la base de datos.")
+        except: st.warning("error al procesar datos financieros. verifica la estructura de la base de datos.")
 
         st.divider()
         st.write("### 🗂️ Registro General de Facturas")
-        # Mostrar la tabla, ocultando la columna de Archivo para que se vea más limpio
         df_mostrar = df_f.drop(columns=["Archivo"]) if "Archivo" in df_f.columns else df_f
         st.dataframe(df_mostrar, hide_index=True, use_container_width=True)
 
@@ -405,12 +413,12 @@ with tab3:
                     fila = hoja_facturas.find(f_sel).row
                     hoja_facturas.delete_rows(fila)
                     obtener_facturas_records.clear(); st.rerun()
-    else: st.info("No hay facturas registradas.")
+    else: st.info("no hay facturas registradas.")
 
 # --- PESTAÑA 4: DIRECTORIO ---
 with tab4:
     st.header("GESTIÓN DE DIRECTORIO")
-    st.info("💡 instruccion: edita directamente en la tabla (doble clic). al terminar pulsa el boton guardar.")
+    st.info("💡 instrucción: edita directamente en la tabla (doble clic). al terminar pulsa el botón guardar.")
     
     col_c, col_s = st.columns([2, 1])
     
@@ -425,7 +433,7 @@ with tab4:
             datos_nuevos = [df_cl_edit.columns.tolist()] + df_cl_edit.fillna("").values.tolist()
             hoja_clientes.append_rows(datos_nuevos)
             obtener_clientes.clear()
-            st.success("Directorio actualizado.")
+            st.success("directorio actualizado.")
             time.sleep(1); st.rerun()
 
     with col_s:
@@ -439,5 +447,7 @@ with tab4:
             datos_nuevos = [df_srv_edit.columns.tolist()] + df_srv_edit.fillna("").values.tolist()
             hoja_servicios.append_rows(datos_nuevos)
             obtener_servicios.clear()
-            st.success("Servicios actualizados.")
+            st.success("servicios actualizados.")
             time.sleep(1); st.rerun()
+
+```
