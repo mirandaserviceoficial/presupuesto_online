@@ -28,49 +28,46 @@ except:
 DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
 PLANTILLA_IMG = os.path.join(DIRECTORIO_ACTUAL, "plantilla_nueva.png")
 
-# --- CONEXIÓN A GOOGLE WORKSPACE ---
-@st.cache_resource
-def conectar_servicios():
+# --- CONEXIÓN Y CREACIÓN AUTÓNOMA DE BASES DE DATOS (CON CACHÉ) ---
+# el ttl=3000 renueva la conexión cada 50 minutos para evitar desconexiones de google
+@st.cache_resource(ttl=3000)
+def inicializar_base_datos():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     if "google_creds_json" in st.secrets:
         creds_dict = json.loads(st.secrets["google_creds_json"])
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     else:
         creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales.json", scope)
+    
     client = gspread.authorize(creds)
-    sheet = client.open("Miranda_DB")
-    return sheet
+    db = client.open("Miranda_DB")
+    
+    def obtener_o_crear_hoja(nombre, filas, columnas, encabezados):
+        try:
+            hoja = db.worksheet(nombre)
+        except gspread.exceptions.WorksheetNotFound:
+            hoja = db.add_worksheet(title=nombre, rows=filas, cols=columnas)
+        
+        # verificamos encabezados solo una vez al iniciar el servidor
+        if not hoja.get_all_values():
+            hoja.append_row(encabezados)
+        return hoja
 
-# --- INICIALIZACIÓN AUTÓNOMA DE BASES DE DATOS ---
+    h_cli = obtener_o_crear_hoja("Clientes", "100", "4", ["Nombre", "Correo", "Direccion", "Telefono"])
+    h_srv = obtener_o_crear_hoja("Servicios", "50", "2", ["Servicio", "Precio"])
+    h_fac = obtener_o_crear_hoja("Facturas", "1000", "7", ["Folio", "Cliente", "Fecha", "Vencimiento", "Total", "Estado", "Archivo"])
+    h_tra = obtener_o_crear_hoja("Trabajos", "1000", "7", ["ID", "Cliente", "Fecha", "Servicio", "Cantidad", "Precio", "Estado"])
+    
+    return db, h_cli, h_srv, h_fac, h_tra
+
 try:
-    db = conectar_servicios()
-    
-    # Conexión o creación de Clientes
-    try: hoja_clientes = db.worksheet("Clientes")
-    except gspread.exceptions.WorksheetNotFound: hoja_clientes = db.add_worksheet(title="Clientes", rows="100", cols="4")
-    if not hoja_clientes.get_all_values(): hoja_clientes.append_row(["Nombre", "Correo", "Direccion", "Telefono"])
-
-    # Conexión o creación de Servicios
-    try: hoja_servicios = db.worksheet("Servicios")
-    except gspread.exceptions.WorksheetNotFound: hoja_servicios = db.add_worksheet(title="Servicios", rows="50", cols="2")
-    if not hoja_servicios.get_all_values(): hoja_servicios.append_row(["Servicio", "Precio"])
-
-    # Conexión o creación de Facturas
-    try: hoja_facturas = db.worksheet("Facturas")
-    except gspread.exceptions.WorksheetNotFound: hoja_facturas = db.add_worksheet(title="Facturas", rows="1000", cols="7")
-    if not hoja_facturas.get_all_values(): hoja_facturas.append_row(["Folio", "Cliente", "Fecha", "Vencimiento", "Total", "Estado", "Archivo"])
-    
-    # Conexión o creación de Trabajos
-    try: hoja_trabajos = db.worksheet("Trabajos")
-    except gspread.exceptions.WorksheetNotFound: hoja_trabajos = db.add_worksheet(title="Trabajos", rows="1000", cols="7")
-    if not hoja_trabajos.get_all_values(): hoja_trabajos.append_row(["ID", "Cliente", "Fecha", "Servicio", "Cantidad", "Precio", "Estado"])
-
+    db, hoja_clientes, hoja_servicios, hoja_facturas, hoja_trabajos = inicializar_base_datos()
 except Exception as e:
-    st.error(f"Error de conexión: {e}")
+    st.error(f"error de conexión: {e}")
     st.stop()
 
-# --- FUNCIONES DE LECTURA (CON CACHÉ) ---
-@st.cache_data(ttl=600)
+# --- FUNCIONES DE LECTURA (CON CACHÉ DINÁMICO) ---
+@st.cache_data(ttl=60)
 def obtener_clientes():
     for intento in range(3):
         try:
@@ -86,7 +83,7 @@ def obtener_clientes():
         except Exception: time.sleep(2)
     return {}
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def obtener_servicios():
     for intento in range(3):
         try:
@@ -95,14 +92,14 @@ def obtener_servicios():
         except Exception: time.sleep(2)
     return {}
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def obtener_facturas_records():
     for intento in range(3):
         try: return hoja_facturas.get_all_records()
         except Exception: time.sleep(2)
     return []
 
-@st.cache_data(ttl=300) 
+@st.cache_data(ttl=60) 
 def obtener_trabajos():
     for intento in range(3):
         try: return hoja_trabajos.get_all_records()
