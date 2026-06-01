@@ -1,8 +1,3 @@
-Aquí tienes el código completo, limpio de espacios ocultos, con las fechas totalmente estandarizadas a `MM/DD/YYYY` en todo el sistema y la protección `WorksheetNotFound` implementada para que no te vuelva a saltar el Error 400.
-
-Copia este bloque y reemplaza todo tu archivo `app.py`:
-
-```python
 import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -449,5 +444,3 @@ with tab4:
             obtener_servicios.clear()
             st.success("servicios actualizados.")
             time.sleep(1); st.rerun()
-
-```
