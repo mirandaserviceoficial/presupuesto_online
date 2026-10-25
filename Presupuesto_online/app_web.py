@@ -324,14 +324,14 @@ with tab2:
                     if zelle_info: pdf.text(15, pm_y, f"Zelle: {zelle_info}"); pm_y += 5
                     if cash_check: pdf.text(15, pm_y, "Check: Payable to Miranda Service / Cash Accepted")
 
-                    fname = f"{folio}_{c_fac.replace(' ','_')}.pdf"
+                    fname = f"{folio}_{str(c_fac).replace(' ','_')}.pdf"
                     pdf.output(fname)
                     
-                    hoja_facturas.append_row([folio, c_fac, f_emision.strftime("%m/%d/%Y"), f_venc.strftime("%m/%d/%Y"), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
+                    hoja_facturas.append_row([folio, str(c_fac), f_emision.strftime("%m/%d/%Y"), f_venc.strftime("%m/%d/%Y"), f"${total_due:,.2f}", "Pendiente", "Gmail Copy"])
                     
                     todas_filas_trabajos = hoja_trabajos.get_all_values()
                     for i, fila in enumerate(todas_filas_trabajos):
-                        if i > 0 and fila[1] == c_fac and fila[6] == "Pendiente":
+                        if i > 0 and fila[1] == str(c_fac) and fila[6] == "Pendiente":
                             hoja_trabajos.update_cell(i+1, 7, "Facturado")
                             
                     obtener_facturas_records.clear()
@@ -342,7 +342,7 @@ with tab2:
                             msg = EmailMessage()
                             msg['Subject'] = f'Invoice {folio} - Miranda Service LLC'
                             msg['From'] = CORREO_PAPA; msg['To'] = cor_cli; msg['Cc'] = CORREO_PAPA
-                            msg.set_content(f"Hi {c_fac},\n\nAttached is invoice {folio}.\nTotal Due: ${total_due:,.2f}\n\nThank you!")
+                            msg.set_content(f"Hi {str(c_fac)},\n\nAttached is invoice {folio}.\nTotal Due: ${total_due:,.2f}\n\nThank you!")
                             with open(fname, 'rb') as f: msg.add_attachment(f.read(), maintype='application', subtype='pdf', filename=fname)
                             with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
                                 s.login(CORREO_PAPA, PASSWORD_APP_GMAIL); s.send_message(msg)
