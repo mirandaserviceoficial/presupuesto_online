@@ -29,7 +29,6 @@ DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
 PLANTILLA_IMG = os.path.join(DIRECTORIO_ACTUAL, "plantilla_nueva.png")
 
 # --- CONEXIÓN Y CREACIÓN AUTÓNOMA DE BASES DE DATOS (CON CACHÉ) ---
-# el ttl=3000 renueva la conexión cada 50 minutos para evitar desconexiones de google
 @st.cache_resource(ttl=3000)
 def inicializar_base_datos():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -48,7 +47,6 @@ def inicializar_base_datos():
         except gspread.exceptions.WorksheetNotFound:
             hoja = db.add_worksheet(title=nombre, rows=filas, cols=columnas)
         
-        # verificamos encabezados solo una vez al iniciar el servidor
         if not hoja.get_all_values():
             hoja.append_row(encabezados)
         return hoja
@@ -150,7 +148,7 @@ with tab1:
                 
         st.divider()
         st.subheader("TRABAJOS ACUMULADOS (SIN FACTURAR)")
-        st.info("💡 instrucción: edita directamente en la tabla (doble clic). al terminar pulsa el botón guardar.")
+        st.info("💡 instrucción: edita directamente en la tabla (doble clic) o selecciona una fila para eliminarla. al terminar pulsa el botón guardar.")
         
         todos_los_trabajos = obtener_trabajos()
         if todos_los_trabajos:
@@ -169,7 +167,7 @@ with tab1:
 
                 df_p_editado = st.data_editor(
                     df_p, 
-                    num_rows="fixed", 
+                    num_rows="dynamic", 
                     use_container_width=True, 
                     key="editor_trabajos_pendientes",
                     column_config={
@@ -279,7 +277,7 @@ with tab2:
                     pdf.text(15, 60, "BILLED TO:")
                     pdf.text(120, 60, f"INVOICE #: {folio}")
                     pdf.set_font("Helvetica", 'B', 10); pdf.set_text_color(0,0,0)
-                    pdf.text(15, 65, c_fac)
+                    pdf.text(15, 65, str(c_fac))
                     pdf.set_font("Helvetica", '', 9)
                     pdf.set_xy(15, 67); pdf.multi_cell(80, 4, f"{dir_cli}\nTel: {tel_cli}")
 
